@@ -27,6 +27,7 @@ const FILE_CLEANUP_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct UploadedFile {
     name: String,
+    uri: String,
 }
 
 pub struct GeminiBatchASR {
@@ -117,7 +118,7 @@ impl GeminiBatchASR {
             if self.cancelled.load(Ordering::Acquire) {
                 anyhow::bail!("Gemini ASR request cancelled");
             }
-            let interaction = self.create_interaction(&file.name, deadline).await?;
+            let interaction = self.create_interaction(&file.uri, deadline).await?;
             if let Some(id) = interaction_id(&interaction) {
                 *self.active_interaction.lock() = Some(id.clone());
                 if self.cancelled.load(Ordering::Acquire) {
@@ -160,7 +161,7 @@ impl GeminiBatchASR {
             .context("Gemini Files API upload initialization failed")?;
         if !start.status().is_success() {
             anyhow::bail!(
-                "Gemini Files API initialization failed ({})",
+                "Gemini Files API initialization failed (HTTP {})",
                 start.status()
             );
         }
@@ -189,7 +190,7 @@ impl GeminiBatchASR {
             .await
             .context("read Gemini Files API response")?;
         if !status.is_success() {
-            anyhow::bail!("Gemini Files API upload failed ({status})");
+            anyhow::bail!("Gemini Files API upload failed (HTTP {status})");
         }
         let json: Value =
             serde_json::from_slice(&body).context("parse Gemini Files API response")?;
@@ -206,7 +207,7 @@ impl GeminiBatchASR {
             .filter(|name| !name.trim().is_empty())
             .or_else(|| uri.rsplit('/').next().map(|id| format!("files/{id}")))
             .context("Gemini Files API response missing file name")?;
-        Ok(UploadedFile { name })
+        Ok(UploadedFile { name, uri })
     }
 
     async fn wait_for_file_ready(&self, name: &str, deadline: Instant) -> Result<()> {
@@ -227,7 +228,7 @@ impl GeminiBatchASR {
                 .await
                 .context("read Gemini Files API state response")?;
             if !status.is_success() {
-                anyhow::bail!("Gemini Files API state request failed ({status})");
+                anyhow::bail!("Gemini Files API state request failed (HTTP {status})");
             }
             let json: Value =
                 serde_json::from_slice(&body).context("parse Gemini Files API state response")?;
@@ -256,7 +257,10 @@ impl GeminiBatchASR {
         if response.status().is_success() || response.status() == reqwest::StatusCode::NOT_FOUND {
             Ok(())
         } else {
-            anyhow::bail!("Gemini Files API deletion failed ({})", response.status())
+            anyhow::bail!(
+                "Gemini Files API deletion failed (HTTP {})",
+                response.status()
+            )
         }
     }
 
@@ -282,7 +286,10 @@ impl GeminiBatchASR {
             .await
             .context("read Gemini Interactions API response")?;
         if !status.is_success() {
-            anyhow::bail!("Gemini Interactions API request failed ({status})");
+            // Keep the stage and status visible without logging provider bodies,
+            // which can echo credentials, file URIs, or audio from a gateway.
+            log::warn!("[asr.gemini] Interactions API request failed (HTTP {status})");
+            anyhow::bail!("Gemini Interactions API request failed (HTTP {status})");
         }
         serde_json::from_slice(&body).context("parse Gemini Interaction response")
     }
@@ -298,8 +305,9 @@ impl GeminiBatchASR {
             }
             match interaction_status(&interaction) {
                 InteractionStatus::Completed => {
-                    return extract_interaction_text(&interaction)
-                        .context("Gemini Interaction completed without transcript");
+                    // Silence legitimately completes without output. In particular,
+                    // ProviderService's 500 ms silence probe must still validate.
+                    return Ok(extract_interaction_text(&interaction).unwrap_or_default());
                 }
                 InteractionStatus::Failed => anyhow::bail!("Gemini Interaction failed"),
                 InteractionStatus::Cancelled => anyhow::bail!("Gemini Interaction was cancelled"),
@@ -331,7 +339,7 @@ impl GeminiBatchASR {
             .await
             .context("read Gemini Interaction status response")?;
         if !status.is_success() {
-            anyhow::bail!("Gemini Interaction status request failed ({status})");
+            anyhow::bail!("Gemini Interaction status request failed (HTTP {status})");
         }
         serde_json::from_slice(&body).context("parse Gemini Interaction status response")
     }
@@ -353,7 +361,7 @@ impl GeminiBatchASR {
             Ok(())
         } else {
             anyhow::bail!(
-                "Gemini Interaction cancellation failed ({})",
+                "Gemini Interaction cancellation failed (HTTP {})",
                 response.status()
             )
         }
@@ -382,7 +390,7 @@ pub fn interactions_url(base_url: &str) -> Result<String> {
 }
 
 pub fn files_upload_url(base_url: &str) -> Result<String> {
-    let parsed = reqwest::Url::parse(base_url.trim()).context("parse Gemini endpoint")?;
+    let parsed = api_base_url(base_url)?;
     let path = parsed.path().trim_end_matches('/');
     let path = if path.ends_with("/files") && path.contains("/upload/") {
         path.to_string()
@@ -414,7 +422,7 @@ fn file_url(base_url: &str, name: &str) -> Result<String> {
 }
 
 fn endpoint_url(base_url: &str, suffix: &str) -> Result<String> {
-    let mut url = reqwest::Url::parse(base_url.trim()).context("parse Gemini endpoint")?;
+    let mut url = api_base_url(base_url)?;
     let path = url.path().trim_end_matches('/');
     let path = if path.ends_with(suffix) {
         path.to_string()
@@ -427,9 +435,25 @@ fn endpoint_url(base_url: &str, suffix: &str) -> Result<String> {
     Ok(url.to_string())
 }
 
+/// Accept the API base or the documented complete Interactions endpoint.
+fn api_base_url(base_url: &str) -> Result<reqwest::Url> {
+    let mut url = reqwest::Url::parse(base_url.trim()).context("parse Gemini endpoint")?;
+    if !matches!(url.scheme(), "http" | "https") {
+        anyhow::bail!("Gemini endpoint must use HTTP or HTTPS");
+    }
+    let path = url.path().trim_end_matches('/');
+    let path = path.strip_suffix("/interactions").unwrap_or(path);
+    let path = if path.is_empty() { "/v1beta" } else { path }.to_owned();
+    url.set_path(&path);
+    url.set_query(None);
+    url.set_fragment(None);
+    Ok(url)
+}
+
+/// Build the AudioContent envelope documented by the Gemini Interactions API.
 pub fn interaction_body(
     model: &str,
-    file_id: &str,
+    file_uri: &str,
     language_codes: &[String],
     custom_vocabulary: &[String],
 ) -> Value {
@@ -443,10 +467,11 @@ pub fn interaction_body(
         transcription_config["custom_vocabulary"] = json!(custom_vocabulary);
     }
     json!({
-        "model": model,
+        "model": model.trim(),
         "input": [{
             "type": "audio",
-            "audio": { "file_id": file_id }
+            "uri": file_uri,
+            "mime_type": "audio/wav"
         }],
         "generation_config": {
             "transcription_config": transcription_config
@@ -522,6 +547,15 @@ fn collect_text(value: &Value, pieces: &mut Vec<String>) {
     match value {
         Value::Array(items) => items.iter().for_each(|item| collect_text(item, pieces)),
         Value::Object(object) => {
+            // Only model text belongs in the transcript, never echoed input,
+            // thought summaries, or tool output from an interaction step.
+            if object
+                .get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| !matches!(kind, "text" | "model_output"))
+            {
+                return;
+            }
             if let Some(text) = object.get("text").and_then(Value::as_str) {
                 if !text.is_empty() {
                     pieces.push(text.to_owned());
@@ -597,241 +631,4 @@ async fn read_response_limited(response: reqwest::Response) -> Result<Vec<u8>> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ports::AudioConsumer;
-    use base64::Engine;
-    use std::io::{Read, Write};
-    use std::net::{TcpListener, TcpStream};
-    use std::thread;
-
-    #[test]
-    fn builds_files_and_interaction_urls() {
-        assert_eq!(
-            files_upload_url(DEFAULT_ENDPOINT).unwrap(),
-            "https://generativelanguage.googleapis.com/upload/v1beta/files"
-        );
-        assert_eq!(
-            interactions_url(DEFAULT_ENDPOINT).unwrap(),
-            "https://generativelanguage.googleapis.com/v1beta/interactions"
-        );
-    }
-
-    #[test]
-    fn serializes_documented_interaction_shape() {
-        let body = interaction_body(
-            DEFAULT_MODEL,
-            "files/abc",
-            &["zh".to_string()],
-            &["Kubernetes".to_string()],
-        );
-        assert_eq!(body["model"], DEFAULT_MODEL);
-        assert_eq!(body["input"][0]["type"], "audio");
-        assert_eq!(body["input"][0]["audio"]["file_id"], "files/abc");
-        assert_eq!(
-            body["generation_config"]["transcription_config"]["language_codes"][0],
-            "zh"
-        );
-        assert_eq!(
-            body["generation_config"]["transcription_config"]["custom_vocabulary"][0],
-            "Kubernetes"
-        );
-        assert_eq!(
-            body["generation_config"]["transcription_config"]["mode"]["type"],
-            "verbatim"
-        );
-    }
-
-    #[tokio::test]
-    async fn transcribes_through_files_and_interactions_lifecycle() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = thread::spawn(move || {
-            let mut request = accept_request(&listener);
-            assert!(request.0.starts_with("POST /upload/v1beta/files HTTP/1.1"));
-            assert!(request
-                .0
-                .to_ascii_lowercase()
-                .contains("x-goog-api-key: key"));
-            assert!(request
-                .0
-                .to_ascii_lowercase()
-                .contains("x-goog-upload-command: start"));
-            assert!(String::from_utf8_lossy(&request.1).contains("openless-dictation.wav"));
-            write_response(
-                &mut request.2,
-                "200 OK",
-                &[(
-                    "X-Goog-Upload-URL",
-                    &format!("http://{address}/upload-session"),
-                )],
-                "",
-            );
-
-            request = accept_request(&listener);
-            assert!(request.0.starts_with("POST /upload-session HTTP/1.1"));
-            assert!(request
-                .0
-                .to_ascii_lowercase()
-                .contains("x-goog-upload-command: upload, finalize"));
-            assert!(request
-                .0
-                .to_ascii_lowercase()
-                .contains("x-goog-upload-offset: 0"));
-            assert!(request.1.starts_with(b"RIFF"));
-            write_response(
-                &mut request.2,
-                "200 OK",
-                &[],
-                &format!(
-                    r#"{{"file":{{"name":"files/file-1","uri":"http://{address}/v1beta/files/file-1"}},"state":"ACTIVE"}}"#
-                ),
-            );
-
-            request = accept_request(&listener);
-            assert!(request.0.starts_with("GET /v1beta/files/file-1 HTTP/1.1"));
-            write_response(
-                &mut request.2,
-                "200 OK",
-                &[],
-                r#"{"name":"files/file-1","state":"ACTIVE"}"#,
-            );
-
-            request = accept_request(&listener);
-            assert!(request.0.starts_with("POST /v1beta/interactions HTTP/1.1"));
-            let body: Value = serde_json::from_slice(&request.1).unwrap();
-            assert_eq!(body["model"], DEFAULT_MODEL);
-            assert_eq!(body["input"][0]["type"], "audio");
-            assert_eq!(body["input"][0]["audio"]["file_id"], "files/file-1");
-            assert_eq!(
-                body["generation_config"]["transcription_config"]["language_codes"][0],
-                "en"
-            );
-            assert_eq!(
-                body["generation_config"]["transcription_config"]["custom_vocabulary"][0],
-                "Kubernetes"
-            );
-            write_response(
-                &mut request.2,
-                "200 OK",
-                &[],
-                r#"{"id":"interactions/i-1","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"hello Gemini"}]}]}"#,
-            );
-
-            request = accept_request(&listener);
-            assert!(request
-                .0
-                .starts_with("DELETE /v1beta/files/file-1 HTTP/1.1"));
-            write_response(&mut request.2, "200 OK", &[], "");
-        });
-
-        let provider = GeminiBatchASR::new(
-            "key".to_string(),
-            format!("http://{address}/v1beta"),
-            DEFAULT_MODEL.to_string(),
-            Some("en".to_string()),
-            vec![" Kubernetes ".to_string()],
-        );
-        provider.consume_pcm_chunk(&vec![0_u8; 32_000]);
-        let transcript = provider.transcribe().await.unwrap();
-        assert_eq!(transcript.text, "hello Gemini");
-        assert_eq!(transcript.duration_ms, 1_000);
-        assert_eq!(provider.buffer_duration_ms(), 0);
-        server.join().unwrap();
-    }
-
-    #[test]
-    fn extracts_output_text_and_steps_text() {
-        assert_eq!(
-            extract_interaction_text(&json!({ "output_text": " hello " })),
-            Some("hello".to_string())
-        );
-        assert_eq!(
-            extract_interaction_text(&json!({
-                "steps": [{ "content": [{ "type": "text", "text": "你好" }] }]
-            })),
-            Some("你好".to_string())
-        );
-    }
-
-    #[test]
-    fn pending_interaction_requires_polling() {
-        assert_eq!(
-            interaction_status(&json!({ "status": "in_progress", "id": "abc" })),
-            InteractionStatus::Pending
-        );
-        assert_eq!(
-            interaction_status(&json!({ "status": "completed", "output_text": "ok" })),
-            InteractionStatus::Completed
-        );
-    }
-
-    #[test]
-    fn vocabulary_is_bounded_and_deduplicated() {
-        let words = normalize_vocabulary(vec![" foo ".into(), "foo".into(), "bar".into()]);
-        assert_eq!(words, ["foo", "bar"]);
-    }
-
-    #[test]
-    fn encodes_canonical_pcm_as_wav_before_upload() {
-        let samples = vec![0_i16; 16_000];
-        let wav = encode_wav_16k_mono(&samples);
-        assert_eq!(&wav[..4], b"RIFF");
-        assert_eq!(wav.len(), 44 + 32_000);
-        assert_eq!(
-            base64::engine::general_purpose::STANDARD.encode(&wav).len(),
-            42_728
-        );
-    }
-
-    fn accept_request(listener: &TcpListener) -> (String, Vec<u8>, TcpStream) {
-        let (mut stream, _) = listener.accept().unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-        let mut bytes = Vec::new();
-        let mut buffer = [0_u8; 4096];
-        let header_end = loop {
-            let count = stream.read(&mut buffer).unwrap();
-            assert!(count > 0, "client closed before sending HTTP headers");
-            bytes.extend_from_slice(&buffer[..count]);
-            if let Some(index) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
-                break index + 4;
-            }
-        };
-        let header = String::from_utf8_lossy(&bytes[..header_end]).to_string();
-        let content_length = header
-            .lines()
-            .find_map(|line| {
-                let line = line.to_ascii_lowercase();
-                line.strip_prefix("content-length:")
-                    .map(str::trim)
-                    .and_then(|value| value.parse::<usize>().ok())
-            })
-            .unwrap_or(0);
-        while bytes.len() < header_end + content_length {
-            let count = stream.read(&mut buffer).unwrap();
-            assert!(count > 0, "client closed before sending HTTP body");
-            bytes.extend_from_slice(&buffer[..count]);
-        }
-        (
-            header,
-            bytes[header_end..header_end + content_length].to_vec(),
-            stream,
-        )
-    }
-
-    fn write_response(stream: &mut TcpStream, status: &str, headers: &[(&str, &str)], body: &str) {
-        let mut response = format!(
-            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n",
-            body.len()
-        );
-        for (name, value) in headers {
-            response.push_str(&format!("{name}: {value}\r\n"));
-        }
-        response.push_str("\r\n");
-        stream.write_all(response.as_bytes()).unwrap();
-        stream.write_all(body.as_bytes()).unwrap();
-        stream.flush().unwrap();
-    }
-}
+mod tests;

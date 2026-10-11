@@ -1689,6 +1689,8 @@ export const ko: typeof zhCN = {
         omniGemini: 'Google Gemini',
         omniDashscope: 'Alibaba DashScope Omni',
       },
+      geminiTranscribeNotice:
+        '기존 모드에서 gemini-3.5-transcribe를 선택하세요. 녹음이 끝나면 오디오를 업로드해 전사하며, 실시간 전사는 아직 지원하지 않습니다. 기본 URL: https://generativelanguage.googleapis.com/v1beta (/v1beta/interactions로 끝나는 URL도 사용할 수 있습니다).',
       elevenLabsUploadNotice:
         'ElevenLabs는 녹음 오디오를 설정된 엔드포인트에 업로드해 일괄 전사합니다.',
       zenmuxVocabularyNote:

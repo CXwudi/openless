@@ -1752,6 +1752,8 @@ export const de: typeof zhCN = {
         omniGemini: 'Google Gemini',
         omniDashscope: 'Alibaba DashScope Omni',
       },
+      geminiTranscribeNotice:
+        'Verwende den traditionellen Modus mit gemini-3.5-transcribe. Audio wird nach Aufnahmeende zur Transkription hochgeladen; Live-Transkription wird noch nicht unterstützt. Basis-URL: https://generativelanguage.googleapis.com/v1beta (auch URLs mit /v1beta/interactions funktionieren).',
       elevenLabsUploadNotice:
         'ElevenLabs lädt die Audioaufnahme zur Stapeltranskription an den eingerichteten Endpunkt hoch.',
       zenmuxVocabularyNote:

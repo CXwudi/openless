@@ -1629,6 +1629,8 @@ export const zhCN = {
         omniGemini: 'Google Gemini',
         omniDashscope: '阿里云百炼 Omni',
       },
+      geminiTranscribeNotice:
+        '请使用传统模式，模型选择 gemini-3.5-transcribe。录音结束后上传音频进行转写，暂不支持实时转写。接口地址填写 https://generativelanguage.googleapis.com/v1beta，也兼容以 /v1beta/interactions 结尾的地址。',
       elevenLabsUploadNotice: 'ElevenLabs 会将录音上传到所配置的端点进行批量转写。',
       zenmuxVocabularyNote:
         'ZenMux 走 JSON 转写协议，不发送词典热词（prompt/hotwords）；词典仍会进入润色链路，但不会参与语音识别偏置。',

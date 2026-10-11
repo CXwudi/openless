@@ -875,6 +875,14 @@ export function ChannelCredentialFields({
           {t('settings.providers.elevenLabsUploadNotice')}
         </div>
       )}
+      {providerType === 'gemini' && (
+        <div
+          role="note"
+          style={{ marginTop: 2, fontSize: 11.5, color: 'var(--ol-ink-4)', lineHeight: 1.6 }}
+        >
+          {t('settings.providers.geminiTranscribeNotice')}
+        </div>
+      )}
       {providerType === 'zenmux' && (
         <div
           role="note"

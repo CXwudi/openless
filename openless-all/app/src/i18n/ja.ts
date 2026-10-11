@@ -1701,6 +1701,8 @@ export const ja: typeof zhCN = {
         omniGemini: 'Google Gemini',
         omniDashscope: 'Alibaba DashScope Omni',
       },
+      geminiTranscribeNotice:
+        '従来モードで gemini-3.5-transcribe を選択してください。録音終了後に音声をアップロードして文字起こしします。リアルタイム文字起こしには未対応です。ベース URL は https://generativelanguage.googleapis.com/v1beta（末尾が /v1beta/interactions の URL も使用できます）。',
       elevenLabsUploadNotice:
         'ElevenLabs は録音音声を設定済みのエンドポイントへアップロードしてバッチ文字起こしします。',
       zenmuxVocabularyNote:
