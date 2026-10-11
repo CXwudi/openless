@@ -1716,19 +1716,43 @@ async fn build_omni_provider(
         ),
         thinking_enabled: context.polish.llm_thinking_enabled,
     };
-    Ok(crate::omni::OmniProvider::new(config))
+    let provider = crate::omni::OmniProvider::new(config)
+        .with_transcription_hints(&context.polish.working_languages, &context.polish.hotwords);
+    validate_omni_context(&provider, context)?;
+    Ok(provider)
+}
+
+/// Dedicated transcription cannot apply a translation prompt.
+fn validate_omni_context(
+    provider: &crate::omni::OmniProvider,
+    context: &DictationContext,
+) -> Result<(), BackendError> {
+    if provider.is_transcription_only() && context.polish.translation_active {
+        return Err(BackendError::new(
+            BackendErrorCode::InvalidArgument,
+            "Gemini Transcribe does not support translation in Multimodal mode; use Traditional mode with a language model",
+        ));
+    }
+    Ok(())
 }
 
 /// Validate an Omni provider using the same construction and request path as
-/// the production dictation pipeline.  The probe is intentionally text-only:
-/// it exercises credential, endpoint, model and protocol resolution without
-/// retaining user audio.  UI must not treat text success as proof that audio
-/// dictation works (issue #1118).
+/// dictation. Dedicated transcription uses synthetic silence; general-purpose
+/// models use a text probe, which does not prove audio support (issue #1118).
 pub async fn validate_shared_omni_provider(
     credentials: Arc<dyn CredentialStore>,
     context: Arc<DictationContext>,
 ) -> Result<(), BackendError> {
     let provider = build_omni_provider(credentials.as_ref(), context.as_ref()).await?;
+    if provider.is_transcription_only() {
+        let wav = crate::asr::wav::encode_wav_16k_mono(&vec![0; 8_000]);
+        provider
+            .complete("", "", Some(&wav))
+            .await
+            .map_err(map_omni_error)?;
+        // Completed silence legitimately produces no transcript.
+        return Ok(());
+    }
     let result = provider
         .complete("验证连接", "ping", None)
         .await
@@ -2100,6 +2124,7 @@ impl DictationEngine for SharedOmniDictationEngine {
                     "Omni dictation context can only change before finalization",
                 ));
             }
+            validate_omni_context(&session.provider, &context)?;
             *session.context.write() = context;
             Ok(())
         })

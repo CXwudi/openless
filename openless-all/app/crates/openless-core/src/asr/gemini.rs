@@ -30,12 +30,21 @@ struct UploadedFile {
     uri: String,
 }
 
+/// Traditional ASR preserves speech; the multimodal pipeline requests final text.
+#[derive(Clone, Copy, Default)]
+pub enum TranscriptionMode {
+    #[default]
+    Verbatim,
+    Smart,
+}
+
 pub struct GeminiBatchASR {
     api_key: String,
     base_url: String,
     model: String,
     language_codes: Vec<String>,
     custom_vocabulary: Vec<String>,
+    mode: TranscriptionMode,
     buffer: Mutex<Vec<u8>>,
     active_interaction: Mutex<Option<String>>,
     cancelled: AtomicBool,
@@ -58,10 +67,30 @@ impl GeminiBatchASR {
                 .into_iter()
                 .collect(),
             custom_vocabulary: normalize_vocabulary(hotwords),
+            mode: TranscriptionMode::Verbatim,
             buffer: Mutex::new(Vec::new()),
             active_interaction: Mutex::new(None),
             cancelled: AtomicBool::new(false),
         }
+    }
+
+    /// Select the dedicated API's transcription mode without changing transport.
+    pub fn with_mode(mut self, mode: TranscriptionMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// Apply all working languages as recognition hints; an empty list auto-detects.
+    pub fn with_language_hints(mut self, languages: &[String]) -> Self {
+        self.language_codes.clear();
+        for language in languages {
+            if let Some(code) = language_code(language) {
+                if !self.language_codes.contains(&code) {
+                    self.language_codes.push(code);
+                }
+            }
+        }
+        self
     }
 
     pub fn buffer_duration_ms(&self) -> u64 {
@@ -84,16 +113,23 @@ impl GeminiBatchASR {
             anyhow::bail!("Gemini ASR request cancelled");
         }
 
-        let result = self
-            .transcribe_inner(&pcm, Instant::now() + self.transcribe_timeout())
-            .await;
+        let duration_ms = crate::asr::pcm::pcm_duration_ms(&pcm);
+        let samples: Vec<i16> = pcm
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect();
+        let result = self.transcribe_wav(&encode_wav_16k_mono(&samples)).await;
         if result.is_ok() {
             self.buffer.lock().clear();
         }
-        result
+        result.map(|text| RawTranscript { text, duration_ms })
     }
 
-    async fn transcribe_inner(&self, pcm: &[u8], deadline: Instant) -> Result<RawTranscript> {
+    /// Transcribe an already encoded WAV, sharing upload, polling and cleanup with ASR.
+    pub(crate) async fn transcribe_wav(&self, wav: &[u8]) -> Result<String> {
+        let deadline = Instant::now() + self.transcribe_timeout();
         if self.api_key.trim().is_empty() {
             anyhow::bail!("Gemini API key missing");
         }
@@ -104,15 +140,7 @@ impl GeminiBatchASR {
             anyhow::bail!("Gemini ASR request cancelled");
         }
 
-        let duration_ms = crate::asr::pcm::pcm_duration_ms(pcm);
-        let samples: Vec<i16> = pcm
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-            .collect();
-        let wav = encode_wav_16k_mono(&samples);
-        let file = self.upload_wav(&wav, deadline).await?;
+        let file = self.upload_wav(wav, deadline).await?;
         let result = async {
             self.wait_for_file_ready(&file.name, deadline).await?;
             if self.cancelled.load(Ordering::Acquire) {
@@ -122,7 +150,6 @@ impl GeminiBatchASR {
             if let Some(id) = interaction_id(&interaction) {
                 *self.active_interaction.lock() = Some(id.clone());
                 if self.cancelled.load(Ordering::Acquire) {
-                    let _ = self.cancel_interaction(&id).await;
                     anyhow::bail!("Gemini ASR request cancelled");
                 }
             }
@@ -138,8 +165,7 @@ impl GeminiBatchASR {
         // Files are temporary provider-side resources. Cleanup is best effort so a
         // successful transcript is not discarded because deletion was unavailable.
         let _ = self.delete_file(&file.name, FILE_CLEANUP_TIMEOUT).await;
-        let text = result?;
-        Ok(RawTranscript { text, duration_ms })
+        result
     }
 
     async fn upload_wav(&self, wav: &[u8], deadline: Instant) -> Result<UploadedFile> {
@@ -269,6 +295,7 @@ impl GeminiBatchASR {
         let body = interaction_body(
             &self.model,
             file_uri,
+            self.mode,
             &self.language_codes,
             &self.custom_vocabulary,
         );
@@ -421,7 +448,7 @@ fn file_url(base_url: &str, name: &str) -> Result<String> {
     endpoint_url(base_url, &format!("/files/{name}"))
 }
 
-fn endpoint_url(base_url: &str, suffix: &str) -> Result<String> {
+pub(crate) fn endpoint_url(base_url: &str, suffix: &str) -> Result<String> {
     let mut url = api_base_url(base_url)?;
     let path = url.path().trim_end_matches('/');
     let path = if path.ends_with(suffix) {
@@ -454,11 +481,15 @@ fn api_base_url(base_url: &str) -> Result<reqwest::Url> {
 pub fn interaction_body(
     model: &str,
     file_uri: &str,
+    mode: TranscriptionMode,
     language_codes: &[String],
     custom_vocabulary: &[String],
 ) -> Value {
     let mut transcription_config = json!({
-        "mode": { "type": "verbatim" }
+        "mode": match mode {
+            TranscriptionMode::Verbatim => json!({ "type": "verbatim" }),
+            TranscriptionMode::Smart => json!("smart"),
+        }
     });
     if !language_codes.is_empty() {
         transcription_config["language_codes"] = json!(language_codes);

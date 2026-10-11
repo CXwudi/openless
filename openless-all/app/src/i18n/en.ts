@@ -1715,7 +1715,11 @@ export const en: typeof zhCN = {
         omniDashscope: 'Alibaba DashScope Omni',
       },
       geminiTranscribeNotice:
-        'Use Traditional mode with gemini-3.5-transcribe. Audio is uploaded for transcription after recording stops; live transcription is not supported yet. Base URL: https://generativelanguage.googleapis.com/v1beta (a URL ending in /v1beta/interactions also works).',
+        'gemini-3.5-transcribe uses verbatim transcription here, followed by your configured LLM. For built-in Smart transcription, select this model in Multimodal mode. Audio is uploaded after recording stops; live transcription is not supported. Base URL: https://generativelanguage.googleapis.com/v1beta (also accepts /v1beta/interactions).',
+      geminiTranscribeOmniNotice:
+        'Use gemini-3.5-transcribe for Smart transcription: removes fillers, applies spoken corrections and formats the transcript after recording stops. Working languages and dictionary terms are supported. This model does not use style prompts or support translation, text polishing or Q&A; use Traditional mode with an LLM for those tasks.',
+      validateSuccessAudio:
+        'Audio connectivity passed using a short silence sample. Confirm transcription quality with a short recording.',
       elevenLabsUploadNotice:
         'ElevenLabs uploads recorded audio to the configured endpoint for batch transcription.',
       zenmuxVocabularyNote:

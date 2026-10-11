@@ -12,6 +12,8 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
 
+mod omni;
+
 #[test]
 fn builds_files_and_interaction_urls() {
     assert_eq!(
@@ -71,6 +73,7 @@ fn serializes_documented_interaction_shape() {
     let body = interaction_body(
         DEFAULT_MODEL,
         "https://generativelanguage.googleapis.com/v1beta/files/abc",
+        TranscriptionMode::Verbatim,
         &["zh".to_string()],
         &["Kubernetes".to_string()],
     );
@@ -209,7 +212,22 @@ fn transcription_server(
     status: &'static str,
     body: &'static str,
 ) -> (String, thread::JoinHandle<()>) {
+    transcription_server_check(status, body, |request| {
+        assert_eq!(
+            request["generation_config"]["transcription_config"]["mode"]["type"],
+            "verbatim"
+        );
+    })
+}
+
+/// Exercise either pipeline's request contract, including pending-request cancellation.
+fn transcription_server_check(
+    status: &'static str,
+    body: &'static str,
+    check: impl FnOnce(&Value) + Send + 'static,
+) -> (String, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
     let server = thread::spawn(move || {
         let mut request = accept_request(&listener);
@@ -273,8 +291,23 @@ fn transcription_server(
         );
         assert_eq!(request_body["input"][0]["mime_type"], "audio/wav");
         assert!(request_body["input"][0].get("audio").is_none());
+        check(&request_body);
         write_response(&mut request.2, status, &[], body);
 
+        if body.contains("in_progress") {
+            loop {
+                request = accept_request(&listener);
+                if request
+                    .0
+                    .starts_with("POST /v1beta/interactions/i-1/cancel ")
+                {
+                    write_response(&mut request.2, "200 OK", &[], r#"{"status":"cancelled"}"#);
+                    break;
+                }
+                assert!(request.0.starts_with("GET /v1beta/interactions/i-1 "));
+                write_response(&mut request.2, "200 OK", &[], body);
+            }
+        }
         request = accept_request(&listener);
         assert!(request
             .0
@@ -342,7 +375,21 @@ fn encodes_canonical_pcm_as_wav_before_upload() {
 }
 
 fn accept_request(listener: &TcpListener) -> (String, Vec<u8>, TcpStream) {
-    let (mut stream, _) = listener.accept().unwrap();
+    let started = Instant::now();
+    let (mut stream, _) = loop {
+        match listener.accept() {
+            Ok(connection) => break connection,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                assert!(
+                    started.elapsed() < Duration::from_secs(5),
+                    "HTTP request timed out"
+                );
+                thread::sleep(Duration::from_millis(2));
+            }
+            Err(error) => panic!("accept failed: {error}"),
+        }
+    };
+    stream.set_nonblocking(false).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();

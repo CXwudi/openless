@@ -1630,7 +1630,10 @@ export const zhCN = {
         omniDashscope: '阿里云百炼 Omni',
       },
       geminiTranscribeNotice:
-        '请使用传统模式，模型选择 gemini-3.5-transcribe。录音结束后上传音频进行转写，暂不支持实时转写。接口地址填写 https://generativelanguage.googleapis.com/v1beta，也兼容以 /v1beta/interactions 结尾的地址。',
+        'gemini-3.5-transcribe 在此使用逐字转写，再交给已配置的 LLM 处理。如需内置智能转写，请在多模态模式中选择此模型。录音结束后上传音频，暂不支持实时转写。接口地址：https://generativelanguage.googleapis.com/v1beta，也兼容 /v1beta/interactions。',
+      geminiTranscribeOmniNotice:
+        '使用 gemini-3.5-transcribe 可启用智能转写：录音结束后去除口头语、处理口述纠正并整理排版。支持工作语言和词典词汇。此模型不使用风格提示词，也不支持翻译、纯文本润色或问答；这些任务请使用传统模式搭配 LLM。',
+      validateSuccessAudio: '已通过短静音音频的连接验证，请再用短录音确认转写效果。',
       elevenLabsUploadNotice: 'ElevenLabs 会将录音上传到所配置的端点进行批量转写。',
       zenmuxVocabularyNote:
         'ZenMux 走 JSON 转写协议，不发送词典热词（prompt/hotwords）；词典仍会进入润色链路，但不会参与语音识别偏置。',
