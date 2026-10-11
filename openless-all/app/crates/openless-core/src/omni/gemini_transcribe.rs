@@ -68,7 +68,7 @@ impl GeminiTranscribeOmni {
         cleanup.0 = None;
         result
             .map_err(|_| LLMError::Network("Gemini transcription task failed".into()))?
-            .map_err(|error| LLMError::Network(error.to_string()))
+            .map_err(sanitize_transcription_error)
     }
 
     /// Recorded-audio transcription returns one final chunk after recording stops.
@@ -104,6 +104,34 @@ impl GeminiTranscribeOmni {
         }
         Ok(text)
     }
+}
+
+fn sanitize_transcription_error(error: anyhow::Error) -> LLMError {
+    let message = if let Some(error) = error.downcast_ref::<reqwest::Error>() {
+        format!(
+            "Gemini transcription request failed ({})",
+            crate::net::request_error_kind(error)
+        )
+    } else if let Some(status) = extract_http_status(&error.to_string()) {
+        format!("Gemini transcription request failed (HTTP {status})")
+    } else {
+        "Gemini transcription request failed".into()
+    };
+    LLMError::Network(message)
+}
+
+fn extract_http_status(message: &str) -> Option<u16> {
+    ["HTTP ", "status "].iter().find_map(|marker| {
+        let tail = message.split_once(marker)?.1;
+        let digits = tail
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>();
+        digits
+            .parse::<u16>()
+            .ok()
+            .filter(|status| (100..600).contains(status))
+    })
 }
 
 /// Cancels the detached worker if its caller stops awaiting the result.
