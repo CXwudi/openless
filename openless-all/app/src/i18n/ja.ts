@@ -1687,6 +1687,7 @@ export const ja: typeof zhCN = {
         asrOpenAiCompatible: 'カスタム OpenAI 互換',
         asrXiaomiMimo: 'Xiaomi MiMo ASR',
         asrIflytek: 'iFlytek リアルタイム音声認識',
+        asrGemini: 'Google Gemini Transcribe',
         asrTencentCloud: 'Tencent Cloud Hunyuan リアルタイム ASR',
         asrElevenLabs: 'ElevenLabs Scribe',
         asrSherpaOnnxLocal: 'ローカル sherpa-onnx（実験的）',

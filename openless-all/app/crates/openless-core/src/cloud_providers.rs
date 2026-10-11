@@ -15,7 +15,7 @@ use parking_lot::{Mutex, RwLock};
 use crate::asr::tencent_cloud::TencentCloudASRError;
 use crate::asr::{
     BailianCredentials, BailianRealtimeASR, DashScopeMultimodalASR, DictionaryHotword,
-    ElevenLabsBatchASR, MimoBatchASR, Qwen3RealtimeASR, Qwen3RealtimeCredentials,
+    ElevenLabsBatchASR, GeminiBatchASR, MimoBatchASR, Qwen3RealtimeASR, Qwen3RealtimeCredentials,
     StepfunRealtimeASR, StepfunRealtimeCredentials, TencentCloudCredentials,
     TencentCloudStreamingASR, VolcengineCredentials, VolcengineStreamingASR, WhisperBatchASR,
     XfyunCredentials, XfyunStreamingASR,
@@ -65,6 +65,7 @@ pub const SHARED_CLOUD_ASR_PROVIDER_TYPES: &[&str] = &[
     "xiaomi-mimo-asr",
     "iflytek",
     "tencent-cloud",
+    "gemini",
 ];
 
 pub const SHARED_CLOUD_LLM_PROVIDER_TYPES: &[&str] = &[
@@ -187,6 +188,7 @@ enum CloudTranscriptionSessionKind {
     Mimo(Arc<MimoBatchASR>),
     DashScope(Arc<DashScopeMultimodalASR>),
     ElevenLabs(Arc<ElevenLabsBatchASR>),
+    Gemini(Arc<GeminiBatchASR>),
     Bailian(Arc<BailianRealtimeASR>),
     QwenRealtime(Arc<Qwen3RealtimeASR>),
     StepfunRealtime(Arc<StepfunRealtimeASR>),
@@ -239,6 +241,7 @@ impl AudioConsumer for CloudTranscriptionSession {
             CloudTranscriptionSessionKind::Mimo(provider) => provider.consume_pcm_chunk(pcm),
             CloudTranscriptionSessionKind::DashScope(provider) => provider.consume_pcm_chunk(pcm),
             CloudTranscriptionSessionKind::ElevenLabs(provider) => provider.consume_pcm_chunk(pcm),
+            CloudTranscriptionSessionKind::Gemini(provider) => provider.consume_pcm_chunk(pcm),
             CloudTranscriptionSessionKind::Bailian(provider) => provider.consume_pcm_chunk(pcm),
             CloudTranscriptionSessionKind::QwenRealtime(provider) => {
                 provider.consume_pcm_chunk(pcm)
@@ -296,6 +299,9 @@ impl TranscriptionSession for CloudTranscriptionSession {
                     );
                     timeout_transcription(timeout, provider.transcribe()).await?
                 }
+                CloudTranscriptionSessionKind::Gemini(provider) => {
+                    provider.transcribe().await.map_err(map_asr_error)?
+                }
                 CloudTranscriptionSessionKind::Bailian(provider) => {
                     let _ = provider.send_last_frame().await;
                     timeout_transcription(Duration::from_secs(120), provider.await_final_result())
@@ -335,6 +341,13 @@ impl TranscriptionSession for CloudTranscriptionSession {
     }
 
     fn cancel(&self) -> BoxFuture<'static, Result<(), BackendError>> {
+        if let CloudTranscriptionSessionKind::Gemini(provider) = &self.kind {
+            let provider = Arc::clone(provider);
+            return Box::pin(async move {
+                provider.cancel().await;
+                Ok(())
+            });
+        }
         match &self.kind {
             CloudTranscriptionSessionKind::Volcengine(provider) => provider.cancel(),
             CloudTranscriptionSessionKind::Whisper(provider) => provider.cancel(),
@@ -346,6 +359,7 @@ impl TranscriptionSession for CloudTranscriptionSession {
             CloudTranscriptionSessionKind::StepfunRealtime(provider) => provider.cancel(),
             CloudTranscriptionSessionKind::Xfyun(provider) => provider.cancel(),
             CloudTranscriptionSessionKind::TencentCloud(provider) => provider.cancel(),
+            CloudTranscriptionSessionKind::Gemini(_) => unreachable!(),
         }
         Box::pin(async { Ok(()) })
     }
@@ -445,7 +459,8 @@ fn validate_cloud_transcription_preparation(
         | ActiveAsrProviderKind::StepfunRealtime
         | ActiveAsrProviderKind::Mimo
         | ActiveAsrProviderKind::DashScopeMultimodal
-        | ActiveAsrProviderKind::ElevenLabs => {
+        | ActiveAsrProviderKind::ElevenLabs
+        | ActiveAsrProviderKind::Gemini => {
             require_configured(&preparation.api_key, "ASR API key")?;
         }
         ActiveAsrProviderKind::WhisperCompatible => {
@@ -660,6 +675,25 @@ async fn build_cloud_transcription_session(
                     non_blank_owned(endpoint)
                         .unwrap_or_else(|| crate::asr::elevenlabs::DEFAULT_ENDPOINT.to_string()),
                     effective_model.clone(),
+                ))),
+                Some(effective_model),
+            )
+        }
+        ActiveAsrProviderKind::Gemini => {
+            let effective_model = non_blank_owned(model)
+                .unwrap_or_else(|| crate::asr::gemini::DEFAULT_MODEL.to_string());
+            crate::provider_rules::validate_gemini_asr_model(&effective_model)
+                .map_err(|message| BackendError::new(BackendErrorCode::InvalidArgument, message))?;
+            let endpoint = non_blank_owned(endpoint)
+                .unwrap_or_else(|| crate::asr::gemini::DEFAULT_ENDPOINT.to_string());
+            let hotwords = context.polish.hotwords.clone();
+            (
+                CloudTranscriptionSessionKind::Gemini(Arc::new(GeminiBatchASR::new(
+                    api_key,
+                    endpoint,
+                    effective_model.clone(),
+                    context.asr.language.clone(),
+                    hotwords,
                 ))),
                 Some(effective_model),
             )

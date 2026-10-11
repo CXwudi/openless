@@ -1616,6 +1616,7 @@ export const zhCN = {
         asrXiaomiMimo: '小米 MiMo ASR',
         asrIflytek: '讯飞实时语音转写',
         asrTencentCloud: '腾讯云混元实时 ASR',
+        asrGemini: 'Google Gemini 专用转写',
         asrElevenLabs: 'ElevenLabs Scribe',
         asrSherpaOnnxLocal: '本地 sherpa-onnx（实验性）',
         asrFoundryLocalWhisper: '本地 Whisper（Foundry Local）',

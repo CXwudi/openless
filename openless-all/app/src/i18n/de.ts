@@ -1724,6 +1724,7 @@ export const de: typeof zhCN = {
         stepfun: 'StepFun',
         custom: 'Benutzerdefiniert',
         asrVolcengine: 'Volcengine bigasr',
+        asrGemini: 'Google Gemini Transcribe',
         asrTencentCloud: 'Tencent Cloud Hunyuan Echtzeit-ASR',
         asrBailian: 'Alibaba Bailian Echtzeit-ASR',
         asrBailianQwen3: 'Bailian Qwen3 Realtime ASR',

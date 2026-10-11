@@ -1617,6 +1617,7 @@ export const zhTW: typeof zhCN = {
         asrXiaomiMimo: '小米 MiMo ASR',
         asrIflytek: '訊飛即時語音轉寫',
         asrTencentCloud: '騰訊雲混元即時 ASR',
+        asrGemini: 'Google Gemini 專用轉寫',
         asrElevenLabs: 'ElevenLabs Scribe',
         asrSherpaOnnxLocal: '本地 sherpa-onnx（實驗性）',
         asrFoundryLocalWhisper: '本地 Whisper（Foundry Local）',

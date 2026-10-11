@@ -1701,6 +1701,7 @@ export const en: typeof zhCN = {
         asrXiaomiMimo: 'Xiaomi MiMo ASR',
         asrIflytek: 'iFlytek Realtime ASR',
         asrTencentCloud: 'Tencent Cloud Hunyuan Realtime ASR',
+        asrGemini: 'Google Gemini Transcribe',
         asrElevenLabs: 'ElevenLabs Scribe',
         asrSherpaOnnxLocal: 'Local sherpa-onnx (Experimental)',
         asrFoundryLocalWhisper: 'Local Whisper (Foundry Local)',

@@ -1675,6 +1675,7 @@ export const ko: typeof zhCN = {
         asrOpenAiCompatible: '커스텀 OpenAI 호환',
         asrXiaomiMimo: 'Xiaomi MiMo ASR',
         asrIflytek: 'iFlytek 실시간 음성 인식',
+        asrGemini: 'Google Gemini Transcribe',
         asrTencentCloud: 'Tencent Cloud Hunyuan 실시간 ASR',
         asrElevenLabs: 'ElevenLabs Scribe',
         asrSherpaOnnxLocal: '로컬 sherpa-onnx(실험적)',

@@ -730,7 +730,7 @@ async fn fetch_models(
         })
         .ok_or_else(|| provider_error("provider endpoint is not configured"))?;
     let url = models_url(endpoint)?;
-    let is_gemini = resolved.provider_type == "gemini";
+    let is_gemini = resolved.kind != ProviderKind::Asr && resolved.provider_type == "gemini";
     let tokenhub_chat_only = resolved.provider_type == "tencentTokenHub";
     let orcarouter_filter = (resolved.provider_type == "orcarouter").then(|| {
         let endpoint_type = match (resolved.kind, resolved.protocol.format) {
