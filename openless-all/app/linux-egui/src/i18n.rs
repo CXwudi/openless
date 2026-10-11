@@ -3551,6 +3551,26 @@ pub const CATALOG: &[Msg] = &[
         ),
     },
     Msg {
+        key: "settings.providers.presets.asrGemini",
+        text: row(
+            "Google Gemini 专用转写",
+            "Google Gemini 專用轉寫",
+            "Google Gemini Transcribe",
+            "Google Gemini Transcribe",
+            "Google Gemini Transcribe",
+        ),
+    },
+    Msg {
+        key: "settings.providers.presets.asrGeminiLive",
+        text: row(
+            "Google Gemini 实时转写",
+            "Google Gemini 即時轉寫",
+            "Google Gemini Live Transcribe",
+            "Google Gemini Live Transcribe",
+            "Google Gemini Live Transcribe",
+        ),
+    },
+    Msg {
         key: "settings.providers.presets.asrElevenLabs",
         text: row(
             "ElevenLabs Scribe",

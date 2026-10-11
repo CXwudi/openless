@@ -1714,6 +1714,7 @@ export const es: typeof zhCN = {
         custom: 'Personalizado',
         asrVolcengine: 'Volcengine bigasr',
         asrGemini: 'Google Gemini Transcribe',
+        asrGeminiLive: 'Google Gemini Live Transcribe',
         asrTencentCloud: 'ASR en tiempo real Hunyuan de Tencent Cloud',
         asrBailian: 'Alibaba Bailian ASR en tiempo real',
         asrBailianQwen3: 'Bailian Qwen3 ASR en tiempo real',

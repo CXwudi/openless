@@ -627,6 +627,20 @@
     "validationProbe": "asr_silence"
   },
   {
+    "authRequirement": "api_key",
+    "defaultEndpoint": "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
+    "defaultModel": "gemini-3.5-transcribe-live",
+    "defaultRequestFormat": null,
+    "kind": "asr",
+    "labelKey": "asrGeminiLive",
+    "providerType": "gemini-live",
+    "staticModels": [
+      "gemini-3.5-transcribe-live"
+    ],
+    "supportedRequestFormats": [],
+    "validationProbe": "asr_live"
+  },
+  {
     "authRequirement": "none",
     "defaultEndpoint": null,
     "defaultModel": null,
