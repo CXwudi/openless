@@ -1690,6 +1690,12 @@ export const ko: typeof zhCN = {
         omniGemini: 'Google Gemini',
         omniDashscope: 'Alibaba DashScope Omni',
       },
+      geminiTranscribeNotice:
+        '여기서는 gemini-3.5-transcribe로 그대로 전사한 뒤 설정된 LLM으로 처리합니다. 스마트 전사를 사용하려면 멀티모달 모드에서 이 모델을 선택하세요. 녹음이 끝나면 오디오를 업로드하며 실시간 전사는 지원하지 않습니다. 기본 URL: https://generativelanguage.googleapis.com/v1beta (/v1beta/interactions도 사용 가능).',
+      geminiTranscribeOmniNotice:
+        'gemini-3.5-transcribe는 스마트 전사를 제공합니다. 녹음 후 군더더기 표현을 제거하고 말로 한 정정을 반영하며 문장을 정리합니다. 작업 언어와 사전 용어를 지원합니다. 스타일 프롬프트, 번역, 텍스트 다듬기, 질의응답은 지원하지 않습니다. 해당 작업에는 기존 모드와 LLM을 사용하세요.',
+      validateSuccessAudio:
+        '짧은 무음 샘플로 오디오 연결을 확인했습니다. 짧은 녹음으로 전사 품질도 확인하세요.',
       elevenLabsUploadNotice:
         'ElevenLabs는 녹음 오디오를 설정된 엔드포인트에 업로드해 일괄 전사합니다.',
       zenmuxVocabularyNote:

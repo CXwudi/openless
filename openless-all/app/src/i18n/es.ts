@@ -1742,6 +1742,12 @@ export const es: typeof zhCN = {
         omniGemini: 'Google Gemini',
         omniDashscope: 'Alibaba DashScope Omni',
       },
+      geminiTranscribeNotice:
+        'gemini-3.5-transcribe transcribe literalmente aquí; después actúa el LLM configurado. Para la transcripción inteligente, elige este modelo en modo multimodal. El audio se sube al terminar la grabación; no se admite transcripción en directo. URL base: https://generativelanguage.googleapis.com/v1beta (también /v1beta/interactions).',
+      geminiTranscribeOmniNotice:
+        'gemini-3.5-transcribe permite transcripción inteligente: elimina muletillas, aplica correcciones habladas y da formato al texto al terminar la grabación. Admite idiomas de trabajo y términos del diccionario. No aplica instrucciones de estilo ni admite traducción, edición de texto o preguntas; usa el modo tradicional con un LLM para esas tareas.',
+      validateSuccessAudio:
+        'Conexión de audio verificada con una breve muestra de silencio. Confirma la calidad de transcripción con una grabación corta.',
       elevenLabsUploadNotice:
         'ElevenLabs sube el audio grabado a la dirección configurada para transcribirlo por lotes.',
       zenmuxVocabularyNote:
