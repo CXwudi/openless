@@ -353,6 +353,9 @@ impl GeminiBatchASR {
     }
 
     async fn get_interaction(&self, id: &str, deadline: Instant) -> Result<Value> {
+        if self.cancelled.load(Ordering::Acquire) {
+            anyhow::bail!("Gemini ASR request cancelled");
+        }
         let url = interaction_url(&self.base_url, id)?;
         let response = crate::net::credential_http_for_url(&url)
             .get(&url)
@@ -397,7 +400,8 @@ impl GeminiBatchASR {
     pub async fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
         self.buffer.lock().clear();
-        let interaction = self.active_interaction.lock().clone();
+        // Claim cleanup once: the worker's error path can race with this call.
+        let interaction = self.active_interaction.lock().take();
         if let Some(interaction) = interaction {
             let _ = self.cancel_interaction(&interaction).await;
         }

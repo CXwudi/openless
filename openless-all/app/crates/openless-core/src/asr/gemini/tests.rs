@@ -226,6 +226,16 @@ fn transcription_server_check(
     body: &'static str,
     check: impl FnOnce(&Value) + Send + 'static,
 ) -> (String, thread::JoinHandle<()>) {
+    transcription_server_with_poll(status, body, check, || {})
+}
+
+/// Observe polling only after the provider has stored the active interaction ID.
+fn transcription_server_with_poll(
+    status: &'static str,
+    body: &'static str,
+    check: impl FnOnce(&Value) + Send + 'static,
+    on_poll: impl FnOnce() + Send + 'static,
+) -> (String, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
@@ -295,6 +305,7 @@ fn transcription_server_check(
         write_response(&mut request.2, status, &[], body);
 
         if body.contains("in_progress") {
+            let mut on_poll = Some(on_poll);
             loop {
                 request = accept_request(&listener);
                 if request
@@ -306,16 +317,50 @@ fn transcription_server_check(
                 }
                 assert!(request.0.starts_with("GET /v1beta/interactions/i-1 "));
                 write_response(&mut request.2, "200 OK", &[], body);
+                if let Some(on_poll) = on_poll.take() {
+                    on_poll();
+                }
             }
         }
         request = accept_request(&listener);
-        assert!(request
-            .0
-            .starts_with("DELETE /v1beta/files/file-1 HTTP/1.1"));
+        assert!(
+            request
+                .0
+                .starts_with("DELETE /v1beta/files/file-1 HTTP/1.1"),
+            "expected file cleanup, received {:?}",
+            request.0.lines().next()
+        );
         write_response(&mut request.2, "200 OK", &[], "");
     });
 
     (format!("http://{address}/v1beta/interactions/"), server)
+}
+
+#[tokio::test]
+async fn cancellation_during_polling_cancels_once_and_deletes_audio() {
+    let (ready, received) = tokio::sync::oneshot::channel();
+    let (endpoint, server) = transcription_server_with_poll(
+        "200 OK",
+        r#"{"id":"i-1","status":"in_progress"}"#,
+        |_| {},
+        move || ready.send(()).unwrap(),
+    );
+    let provider = Arc::new(GeminiBatchASR::new(
+        "key".into(),
+        endpoint,
+        DEFAULT_MODEL.into(),
+        None,
+        Vec::new(),
+    ));
+    provider.consume_pcm_chunk(&vec![0; 32_000]);
+    let worker = Arc::clone(&provider);
+    let task = tokio::spawn(async move { worker.transcribe().await });
+    received.await.unwrap();
+    provider.cancel().await;
+    assert!(task.await.unwrap().is_err());
+    tokio::task::spawn_blocking(move || server.join().unwrap())
+        .await
+        .unwrap();
 }
 
 #[test]
