@@ -665,7 +665,7 @@ fn collect_text(value: &Value, pieces: &mut Vec<String>) {
     }
 }
 
-fn normalize_vocabulary(words: Vec<String>) -> Vec<String> {
+pub(crate) fn normalize_vocabulary(words: Vec<String>) -> Vec<String> {
     let mut normalized = Vec::new();
     for word in words {
         let word = word.trim();
@@ -680,7 +680,7 @@ fn normalize_vocabulary(words: Vec<String>) -> Vec<String> {
     normalized
 }
 
-fn language_code(language: &str) -> Option<String> {
+pub(crate) fn language_code(language: &str) -> Option<String> {
     let language = language.trim();
     if language.is_empty() {
         return None;

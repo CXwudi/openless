@@ -350,7 +350,10 @@ impl OmniProvider {
                 provider: config.provider_id.clone(),
                 model: config.model.clone(),
             };
-            if config.model.trim() == crate::asr::gemini::DEFAULT_MODEL {
+            if matches!(
+                config.model.trim(),
+                crate::asr::gemini::DEFAULT_MODEL | crate::asr::gemini_live::MODEL
+            ) {
                 return Self::GeminiTranscribe {
                     provider: gemini_transcribe::GeminiTranscribeOmni::new(config),
                     label,
@@ -385,6 +388,17 @@ impl OmniProvider {
 
     pub fn is_transcription_only(&self) -> bool {
         matches!(self, Self::GeminiTranscribe { .. })
+    }
+
+    /// Open a real-time audio session when the selected dedicated model supports it.
+    pub(crate) async fn start_live_transcription(
+        &self,
+        partials: std::sync::Arc<dyn crate::ports::TextStreamSink>,
+    ) -> Result<Option<std::sync::Arc<crate::asr::gemini_live::GeminiLiveASR>>, LLMError> {
+        match self {
+            Self::GeminiTranscribe { provider, .. } => provider.start_live(partials).await,
+            _ => Ok(None),
+        }
     }
 
     pub fn call_label(&self) -> OmniCallLabel {
