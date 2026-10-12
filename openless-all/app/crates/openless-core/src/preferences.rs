@@ -257,8 +257,12 @@ impl PreferencesStore {
         )
     }
 
-    pub fn set(&self, preferences: UserPreferences) -> Result<(), BackendError> {
-        self.update(|current| *current = preferences)
+    pub fn set(&self, mut preferences: UserPreferences) -> Result<(), BackendError> {
+        self.update(|current| {
+            // The sync transaction owns this field; stale whole-document saves cannot reroute its token.
+            preferences.sync_custom_server_origin = current.sync_custom_server_origin.clone();
+            *current = preferences;
+        })
     }
 
     pub(crate) fn sync_snapshot(
@@ -352,6 +356,7 @@ impl PreferencesStore {
     ) -> Result<(), BackendError> {
         self.update(|current| {
             preferences.preserve_style_preferences_from(current);
+            preferences.sync_custom_server_origin = current.sync_custom_server_origin.clone();
             *current = preferences;
         })
     }
@@ -460,5 +465,34 @@ mod tests {
         let store = PreferencesStore::in_memory();
         let error = store.set(UserPreferences::default()).unwrap_err();
         assert_eq!(error.code, BackendErrorCode::Persistence);
+    }
+}
+
+#[cfg(test)]
+mod sync_origin_tests {
+    use super::*;
+
+    #[test]
+    fn stale_preference_documents_cannot_reroute_a_saved_sync_token() {
+        let dir =
+            std::env::temp_dir().join(format!("openless-sync-origin-{}", uuid::Uuid::new_v4()));
+        let store = PreferencesStore::open(dir.join("preferences.json")).unwrap();
+        let stale = store.get();
+        store
+            .update(|prefs| prefs.sync_custom_server_origin = Some("https://sync.example".into()))
+            .unwrap();
+        store.set(stale.clone()).unwrap();
+        assert_eq!(
+            store.get().sync_custom_server_origin.as_deref(),
+            Some("https://sync.example")
+        );
+        store
+            .set_preserving_current_style_preferences(stale)
+            .unwrap();
+        assert_eq!(
+            store.get().sync_custom_server_origin.as_deref(),
+            Some("https://sync.example")
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

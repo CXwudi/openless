@@ -376,7 +376,7 @@ The dictionary handles your proper nouns, product names, names of people, and ne
 - **Learn from corrections (experimental).** Open Settings → Experiments & extensions → Learn from corrections to enable it and configure observation duration (10–60 seconds, default 60), suggestion duration (5–60 seconds, default 10), and maximum automatic phrase length (2–32 characters, default 12). It defaults to off and is not enabled by cursor context or cloud sync. On macOS, Windows and Android, supported editors can be observed after insertion. Suggestions require confirmation before expiry to enter the dictionary. Changing parameters stops the current observation and clears pending suggestions; new values apply to the next dictation. Android requires accessibility. When observation is unavailable, use **Remember a word** in history details; Android IME result editing also offers an unchecked dictionary option. Every path requires explicit confirmation and does not create global replacement rules.
 - **Entries that earn their keep get priority.** The hotword budget sent to ASR providers is finite (a few hundred characters). Entries are ranked by hit count, with a few reserved seats for words you just added by hand, so the terms you actually use keep their place instead of being pushed out by whatever you added most recently.
 
-### Cursor context (opt-in, macOS / Windows)
+### Cursor context (opt-in, macOS / Windows / Android)
 
 Settings → Privacy → Data storage → **Cursor context**. Off by default.
 
@@ -386,7 +386,9 @@ On Windows, cursor context is read via UI Automation from the focused text contr
 
 Chromium-based editors (VS Code, Electron apps) only keep their accessibility tree's caret position in sync once they detect an active accessibility client, so with default settings the position UI Automation reads back can be stale. In VS Code, set `editor.accessibilitySupport` to `on` (Settings → search "accessibility support"; a window reload may be needed) to get accurate cursor context; the same applies to other Electron-based editors with similar settings. Plain Chrome/Edge text fields do not need this.
 
-Cursor context excludes password fields, macOS Secure Input (or the Windows UIA password-control flag), known password managers and terminals. Turning it off stops reading cursor context for polishing; other authorized accessibility features, including local vocabulary learning and insertion, work independently. Turning vocabulary learning off stops observation and clears pending suggestions.
+On Android, the OpenLess keyboard reads the text before and after the caret straight from its own `InputConnection` at the moment recording starts — no Accessibility permission involved, one read, no retry. Dictation, quick notes and cloud notes all use it for polishing, but the context only informs how the spoken words are written: it is never copied into the note, the history, the cloud note webhook or the logs. With a cloud polish model it is sent to that provider as part of the polish request. The floating overlay does not read cursor context yet.
+
+Cursor context excludes password fields, macOS Secure Input, Windows UIA password controls, Android editors that are password-typed or ask for no personalized learning, known password managers and terminals. Turning it off stops reading cursor context for polishing; other authorized accessibility features, including local vocabulary learning and insertion, work independently. Turning vocabulary learning off stops observation and clears pending suggestions.
 
 The main window is organized as Home / History / Dictionary / Settings. The Dictionary tab opens a separate editor window when you click "New". The Home tab shows total dictation time, total characters, average characters per minute, estimated time saved, and dictionary participation statistics.
 

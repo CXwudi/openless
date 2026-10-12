@@ -9,7 +9,8 @@ export const en: typeof zhCN = {
     description:
       'Dictate a draft or load the target text, edit it with voice instructions, then confirm to write it back.',
     targetHint: 'Place the cursor in the target input field, or select the text to edit.',
-    androidTargetHint: 'Assign Voice editing to an overlay swipe. Record in the target app, then swipe to preview. Confirmation writes back to the original field.',
+    androidTargetHint:
+      'Assign Voice editing to an overlay swipe. Record in the target app, then swipe to preview. Confirmation writes back to the original field.',
     startDraft: 'Start dictating a draft',
     status: 'Status: {{phase}}',
     turns: 'Turns: {{count}}',
@@ -42,6 +43,12 @@ export const en: typeof zhCN = {
     },
   },
   cloudSyncE2ee: {
+    customServerTitle: 'Self-hosted sync server (advanced)',
+    customServerOrigin: 'Server address (https://...)',
+    customServerToken: 'Sign-in token',
+    customServerSave: 'Save',
+    customServerHint:
+      'Leave blank to use the official sync server. The address must start with https:// and be a root URL.',
     protocolTitle: 'Cloud sync agreement and privacy notice',
     protocolIntro:
       'OpenLess and its independent developers respect your privacy and work to protect your data. Read this notice before continuing.',
@@ -1313,7 +1320,7 @@ export const en: typeof zhCN = {
       desc: 'Conversation history and context kept on this device.',
       cursorContextLabel: 'Cursor context (experimental)',
       cursorContextDesc:
-        'Send nearby document text with polish requests (macOS / Windows). This switch is separate from local vocabulary learning. Password fields, terminals and known sensitive apps are excluded.',
+        'Send a short stretch of text around the cursor with polish requests as reference for names, homophones and pronouns (macOS / Windows / Android). Dictation, quick notes and cloud notes all use it, but the context itself is never written to notes, history or logs; with a cloud model it is sent to that provider with the polish request. This switch is separate from local vocabulary learning. Password fields, terminals and known sensitive apps are excluded.',
     },
     codingConsole: {
       title: 'Claude Console',

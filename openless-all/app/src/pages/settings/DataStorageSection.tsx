@@ -83,9 +83,8 @@ export function DataStorageSection() {
       </SettingRow>
       {/* Cursor context. Placing it under "Privacy" rather than "Polish" is deliberate: this
           toggle's real cost is not tokens but "sending text from other apps to the LLM provider".
-          Shown on macOS and Windows — Linux has no implementation, and a switch that changes
-          nothing would just mislead. */}
-      {(detectOS() === 'mac' || detectOS() === 'win') && (
+          Shown on macOS, Windows and Android — Linux has no implementation. */}
+      {(detectOS() === 'mac' || detectOS() === 'win' || detectOS() === 'android') && (
         <SettingRow
           label={t('settings.dataStorage.cursorContextLabel')}
           desc={t('settings.dataStorage.cursorContextDesc')}
