@@ -34,10 +34,11 @@ use crate::credentials::{
 use crate::dictation_context::{DictationAudioSource, DictationContext};
 use crate::errors::{BackendError, BackendErrorCode};
 use crate::ports::{
-    ActiveRecording, AudioConsumer, AudioRecorder, DictationEngine, EngineFailure,
-    EngineFailureStage, EngineProgress, EngineProgressSink, EngineResult, EngineStage,
-    PolishOutput, PreparedTranscription, RecordingProgressSink, TextPolisher, TextStreamChunk,
-    TextStreamSink, TranscriptOutput, TranscriptionEngine, TranscriptionSession,
+    ActiveRecording, AudioConsumer, AudioRecorder, CaptureStartRequest, DictationEngine,
+    EngineFailure, EngineFailureStage, EngineProgress, EngineProgressSink, EngineResult,
+    EngineStage, PendingAudioCapture, PolishOutput, PreparedTranscription, RecordingProgressSink,
+    TextPolisher, TextStreamChunk, TextStreamSink, TranscriptOutput, TranscriptionEngine,
+    TranscriptionSession,
 };
 use crate::provider_rules::{
     default_asr_endpoint, default_asr_model, default_llm_endpoint, default_llm_model,
@@ -1830,6 +1831,7 @@ pub struct SharedOmniDictationEngine {
     credentials: Arc<dyn CredentialStore>,
     recorder: Arc<dyn AudioRecorder>,
     sessions: Arc<Mutex<HashMap<SessionId, Arc<OmniSession>>>>,
+    pending_captures: Arc<Mutex<HashMap<SessionId, Box<dyn PendingAudioCapture>>>>,
 }
 
 impl SharedOmniDictationEngine {
@@ -1838,6 +1840,7 @@ impl SharedOmniDictationEngine {
             credentials,
             recorder,
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            pending_captures: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -1891,6 +1894,129 @@ impl RecordingProgressSink for OmniRecordingProgress {
 }
 
 impl DictationEngine for SharedOmniDictationEngine {
+    fn arm_audio_capture(
+        &self,
+        request: CaptureStartRequest,
+    ) -> Result<Box<dyn PendingAudioCapture>, BackendError> {
+        self.recorder.arm_capture(request)
+    }
+
+    fn start_with_audio_capture(
+        &self,
+        session_id: SessionId,
+        context: Arc<DictationContext>,
+        progress: Arc<dyn EngineProgressSink>,
+        capture: Box<dyn PendingAudioCapture>,
+    ) -> BoxFuture<'static, Result<(), BackendError>> {
+        let credentials = Arc::clone(&self.credentials);
+        let sessions = Arc::clone(&self.sessions);
+        let pending_captures = Arc::clone(&self.pending_captures);
+        Box::pin(async move {
+            let mut capture = Some(capture);
+            let duplicate_pending = {
+                let mut pending = pending_captures.lock();
+                if let std::collections::hash_map::Entry::Vacant(entry) = pending.entry(session_id)
+                {
+                    entry.insert(capture.take().expect("Omni capture was not consumed"));
+                    false
+                } else {
+                    true
+                }
+            };
+            if duplicate_pending {
+                let _ = capture
+                    .take()
+                    .expect("duplicate Omni capture was lost")
+                    .discard()
+                    .await;
+                return Err(BackendError::new(
+                    BackendErrorCode::Busy,
+                    "Omni provisional capture already exists",
+                ));
+            }
+            let provider = match build_omni_provider(credentials.as_ref(), &context).await {
+                Ok(provider) => Arc::new(provider),
+                Err(error) => {
+                    let pending_capture = pending_captures.lock().remove(&session_id);
+                    if let Some(capture) = pending_capture {
+                        let _ = capture.discard().await;
+                    }
+                    return Err(error);
+                }
+            };
+            let Some(capture) = pending_captures.lock().remove(&session_id) else {
+                return Err(cancelled_omni_error());
+            };
+            let pcm = Arc::new(OmniPcm::default());
+            let cancellation = Arc::new(ProviderCancellation::default());
+            let session = Arc::new(OmniSession {
+                context: RwLock::new(Arc::clone(&context)),
+                provider,
+                pcm: Arc::clone(&pcm),
+                recording: Mutex::new(None),
+                cancellation,
+                finishing: AtomicBool::new(false),
+                progress: Arc::clone(&progress),
+            });
+            let duplicate = {
+                let mut active = sessions.lock();
+                match active.entry(session_id) {
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(Arc::clone(&session));
+                        false
+                    }
+                    std::collections::hash_map::Entry::Occupied(_) => true,
+                }
+            };
+            if duplicate {
+                let _ = capture.discard().await;
+                return Err(BackendError::new(
+                    BackendErrorCode::Busy,
+                    "Omni dictation session already exists",
+                ));
+            }
+            if context.audio_source == DictationAudioSource::External {
+                let _ = capture.discard().await;
+                return Ok(());
+            }
+            if session.cancellation.is_cancelled() {
+                let _ = capture.discard().await;
+                remove_omni_session(&sessions, session_id, &session);
+                return Err(cancelled_omni_error());
+            }
+            let consumer: Arc<dyn AudioConsumer> = pcm;
+            let level_progress: Arc<dyn RecordingProgressSink> = Arc::new(OmniRecordingProgress {
+                session_id,
+                progress,
+            });
+            let recording = match capture
+                .commit(session_id, Arc::clone(&context), consumer, level_progress)
+                .await
+            {
+                Ok(recording) => recording,
+                Err(error) => {
+                    remove_omni_session(&sessions, session_id, &session);
+                    return Err(error);
+                }
+            };
+            if session.cancellation.is_cancelled() {
+                let _ = recording.stop().await;
+                remove_omni_session(&sessions, session_id, &session);
+                return Err(cancelled_omni_error());
+            }
+            *session.recording.lock() = Some(recording);
+            if session.cancellation.is_cancelled() {
+                let recording = session.recording.lock().take();
+                if let Some(recording) = recording {
+                    let _ = recording.stop().await;
+                }
+                remove_omni_session(&sessions, session_id, &session);
+                return Err(cancelled_omni_error());
+            }
+            Ok(())
+        })
+    }
+
     fn start(
         &self,
         session_id: SessionId,
@@ -2202,8 +2328,12 @@ impl DictationEngine for SharedOmniDictationEngine {
 
     fn cancel(&self, session_id: SessionId) -> BoxFuture<'static, Result<(), BackendError>> {
         let session = self.sessions.lock().get(&session_id).cloned();
+        let pending_capture = self.pending_captures.lock().remove(&session_id);
         let sessions = Arc::clone(&self.sessions);
         Box::pin(async move {
+            if let Some(capture) = pending_capture {
+                capture.discard().await?;
+            }
             let Some(session) = session else {
                 return Ok(());
             };

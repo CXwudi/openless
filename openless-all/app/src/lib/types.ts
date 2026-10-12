@@ -358,6 +358,8 @@ export interface UserPreferences {
   muteDuringRecording: boolean;
   /** Record fully first, then connect to the current ASR and submit the whole audio on stop. Off by default. */
   stableTranscriptionEnabled: boolean;
+  /** Keep a bounded microphone pre-roll in memory to reduce the delay before first speech is captured. */
+  lowLatencyDictationEnabled: boolean;
   /** When the recording hotkey enters the recording state, plays a synthesized cue that recording has started.
    *  On by default; synthesized with the Web Audio API in the capsule window, independent of showCapsule. */
   audioCueOnRecord: boolean;

@@ -289,14 +289,14 @@ pub use model_store::{
 };
 pub use ports::PreparedTranscription;
 pub use ports::{
-    ActiveRecording, AudioConsumer, AudioRecorder, CapturedTextTarget, DictationEngine,
-    DirectoryResourceResolver, EditObservationAdapter, EditObservationSink, EngineFailure,
-    EngineFailureStage, EngineProgress, EngineProgressSink, EngineResult, EngineStage, HostAction,
-    HostActions, HostContextAdapter, HostContextCapture, InsertOutcome, InsertWriteResult,
-    NoopEditObservationAdapter, NoopHostActions, NoopHostContextAdapter, PolishOutput,
-    RecordingArchive, RecordingControlSink, RecordingEvent, RecordingProgressSink,
-    ResourceResolver, TextInserter, TextInsertionSession, TextPolisher, TextStreamChunk,
-    TextStreamSink, TranscriptOutput, TranscriptionEngine, TranscriptionSession,
+    ActiveRecording, AudioConsumer, AudioRecorder, CaptureStartRequest, CapturedTextTarget,
+    DictationEngine, DirectoryResourceResolver, EditObservationAdapter, EditObservationSink,
+    EngineFailure, EngineFailureStage, EngineProgress, EngineProgressSink, EngineResult,
+    EngineStage, HostAction, HostActions, HostContextAdapter, HostContextCapture, InsertOutcome,
+    InsertWriteResult, NoopEditObservationAdapter, NoopHostActions, NoopHostContextAdapter,
+    PendingAudioCapture, PolishOutput, RecordingArchive, RecordingControlSink, RecordingEvent,
+    RecordingProgressSink, ResourceResolver, TextInserter, TextInsertionSession, TextPolisher,
+    TextStreamChunk, TextStreamSink, TranscriptOutput, TranscriptionEngine, TranscriptionSession,
     UnsupportedTextInserter, VoiceCapture,
 };
 pub use preferences::PreferencesStore;

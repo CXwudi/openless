@@ -215,6 +215,39 @@ pub trait EngineProgressSink: Send + Sync {
 }
 
 pub trait DictationEngine: Send + Sync + 'static {
+    /// Begin host-owned, memory-only capture as soon as a physical generation
+    /// is accepted. The returned ticket must be committed or discarded exactly
+    /// once by the Core session lifecycle.
+    fn arm_audio_capture(
+        &self,
+        _request: CaptureStartRequest,
+    ) -> Result<Box<dyn PendingAudioCapture>, BackendError> {
+        Err(BackendError::new(
+            BackendErrorCode::Unsupported,
+            "dictation engine does not expose provisional capture",
+        ))
+    }
+
+    /// Start a session by promoting a capture that was armed for the same
+    /// physical hotkey generation. The default preserves compatibility with
+    /// engines that do not implement provisional capture and discards the
+    /// ticket instead of leaking native resources.
+    fn start_with_audio_capture(
+        &self,
+        _session_id: SessionId,
+        _context: Arc<DictationContext>,
+        _progress: Arc<dyn EngineProgressSink>,
+        capture: Box<dyn PendingAudioCapture>,
+    ) -> BoxFuture<'static, Result<(), BackendError>> {
+        Box::pin(async move {
+            let _ = capture.discard().await;
+            Err(BackendError::new(
+                BackendErrorCode::Unsupported,
+                "dictation engine does not support provisional capture",
+            ))
+        })
+    }
+
     fn start(
         &self,
         session_id: SessionId,
@@ -460,22 +493,63 @@ pub trait RecordingArchive: Send + Sync {
     fn discard(&self) -> BoxFuture<'static, Result<(), BackendError>>;
 }
 
-/// One active recording resource. `stop` consumes the handle so release can
-/// happen at most once even when finish and cancel race.
-pub trait ActiveRecording: Send {
-    /// Returns the exact archive created for this recording. `None` means the
-    /// adapter does not expose archive capability.
-    fn archive(&self) -> Option<Arc<dyn RecordingArchive>> {
-        None
-    }
+/// A physical hotkey generation that may begin microphone capture before the
+/// Core session has finished preparing its provider and insertion context.
+///
+/// Hosts must keep the timestamp monotonic and must never reuse a press id for
+/// another physical generation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaptureStartRequest {
+    pub press_id: u64,
+    pub pressed_at: std::time::Instant,
+    pub microphone_device_name: Option<String>,
+    pub low_latency: bool,
+    pub pre_roll_ms: u16,
+}
 
-    fn stop(self: Box<Self>) -> BoxFuture<'static, Result<(), BackendError>>;
+/// An optional host-owned capture that starts before a dictation session is
+/// public. The host keeps PCM in memory until Core promotes or discards this
+/// generation; no archive or provider may observe it before promotion.
+pub trait PendingAudioCapture: Send {
+    fn commit(
+        self: Box<Self>,
+        session_id: SessionId,
+        context: Arc<DictationContext>,
+        consumer: Arc<dyn AudioConsumer>,
+        progress: Arc<dyn RecordingProgressSink>,
+    ) -> BoxFuture<'static, Result<Box<dyn ActiveRecording>, BackendError>>;
+
+    fn discard(self: Box<Self>) -> BoxFuture<'static, Result<(), BackendError>>;
 }
 
 /// Platform audio capture adapter. The core owns the canonical PCM contract;
 /// each host owns device selection, permissions, resampling and the native
 /// stream implementation.
 pub trait AudioRecorder: Send + Sync {
+    /// Arm memory-only capture for a physical hotkey generation. Hosts that do
+    /// not support provisional capture keep the existing start path by
+    /// returning Unsupported.
+    fn arm_capture(
+        &self,
+        _request: CaptureStartRequest,
+    ) -> Result<Box<dyn PendingAudioCapture>, BackendError> {
+        Err(BackendError::new(
+            BackendErrorCode::Unsupported,
+            "audio recorder does not support provisional capture",
+        ))
+    }
+
+    /// Discard a previously armed generation. This is deliberately async so a
+    /// host can join a native startup thread and stop a late stream.
+    fn discard_capture(&self, _press_id: u64) -> BoxFuture<'static, Result<(), BackendError>> {
+        Box::pin(async {
+            Err(BackendError::new(
+                BackendErrorCode::Unsupported,
+                "audio recorder does not support provisional capture",
+            ))
+        })
+    }
+
     fn start(
         &self,
         session_id: SessionId,
@@ -492,6 +566,21 @@ pub trait AudioRecorder: Send + Sync {
         ))
     }
 }
+
+/// One active recording resource. `stop` consumes the handle so release can
+/// happen at most once even when finish and cancel race.
+pub trait ActiveRecording: Send {
+    /// Returns the exact archive created for this recording. `None` means the
+    /// adapter does not expose archive capability.
+    fn archive(&self) -> Option<Arc<dyn RecordingArchive>> {
+        None
+    }
+
+    fn stop(self: Box<Self>) -> BoxFuture<'static, Result<(), BackendError>>;
+}
+
+/// Legacy capture handles retained below are intentionally defined after the
+/// optional staging contract so both paths share the same resource ownership.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextStreamChunk {

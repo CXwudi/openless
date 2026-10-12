@@ -956,6 +956,7 @@ fn run_desktop() {
             }
             RunEvent::Exit => {
                 TRAY_MICROPHONE_WATCHER_STOPPING.store(true, Ordering::Relaxed);
+                crate::recorder::warm_capture_hub().stop();
                 let coordinator = app.state::<Arc<coordinator::Coordinator>>();
                 coordinator.stop_hotkey_listener();
                 coordinator.stop_qa_hotkey_listener();

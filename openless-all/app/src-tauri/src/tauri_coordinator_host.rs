@@ -1645,7 +1645,8 @@ impl TauriCoordinatorHost {
             return;
         };
         let state = app.state::<crate::commands::MicrophoneMonitorState>();
-        let recorder = state.lock().take();
+        let _operation = state.operation.lock();
+        let recorder = state.recorder.lock().take();
         if let Some(recorder) = recorder {
             log::info!("[recorder] stopping microphone preview monitor before {owner}");
             recorder.stop();

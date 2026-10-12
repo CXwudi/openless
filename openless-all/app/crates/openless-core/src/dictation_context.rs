@@ -165,6 +165,9 @@ pub struct DictationInsertionContext {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordingPlan {
     pub microphone_device_name: Option<String>,
+    /// The physical hotkey generation that owns a provisional capture, when
+    /// this context is promoted from the native staging path.
+    pub capture_generation: Option<u64>,
     pub mute_during_recording: bool,
     /// Buffer the whole recording and start ASR only after the recorder stops.
     pub transcribe_after_stop: bool,
@@ -287,6 +290,7 @@ impl DictationContext {
             normal_archive_successful_recording: preferences.record_audio_for_debug,
             recording: RecordingPlan {
                 microphone_device_name: non_blank(&preferences.microphone_device_name),
+                capture_generation: None,
                 mute_during_recording: preferences.mute_during_recording,
                 transcribe_after_stop: preferences.stable_transcription_enabled,
                 archive_enabled: true,
@@ -364,6 +368,12 @@ impl DictationContext {
                 android_insert_strategy: preferences.android_insert_strategy,
             },
         }
+    }
+
+    pub fn with_capture_generation(&self, generation: Option<u64>) -> Self {
+        let mut next = self.clone();
+        next.recording.capture_generation = generation;
+        next
     }
 
     pub fn with_output_target(&self, target: DictationOutputTarget) -> Self {

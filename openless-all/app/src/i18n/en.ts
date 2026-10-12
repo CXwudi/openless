@@ -1486,6 +1486,9 @@ export const en: typeof zhCN = {
       stableTranscriptionLabel: 'Stable mode (record, then transcribe)',
       stableTranscriptionDesc:
         'When enabled, ASR connects only after recording stops and receives the complete audio. Results arrive later, but connection delays and network instability during recording cannot interrupt capture.',
+      lowLatencyDictationLabel: 'Low-latency capture',
+      lowLatencyDictationDesc:
+        'Keep a microphone stream ready and retain up to 500 ms in memory so speech immediately after the hotkey is less likely to be missed. Audio is not saved or uploaded until you confirm recording; this uses more power and keeps the microphone indicator active.',
       muteDuringRecordingLabel: 'Mute while recording',
       muteDuringRecordingDesc:
         'Temporarily mute system output during voice input to avoid speaker echo.',

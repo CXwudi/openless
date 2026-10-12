@@ -1515,6 +1515,9 @@ export const de: typeof zhCN = {
       stableTranscriptionLabel: 'Stabiler Modus (erst aufnehmen, dann transkribieren)',
       stableTranscriptionDesc:
         'Wenn aktiviert, verbindet sich ASR erst nach dem Aufnahmestopp und erhält die gesamte Aufnahme. Das Ergebnis erscheint später, aber Verbindungsaufbau und Netzwerkschwankungen während der Aufnahme stören die Aufzeichnung nicht.',
+      lowLatencyDictationLabel: 'Aufnahme mit niedriger Latenz',
+      lowLatencyDictationDesc:
+        'Hält einen Mikrofonstream bereit und bewahrt bis zu 500 ms im Speicher, damit Sprache direkt nach dem Kurzbefehl seltener verloren geht. Vor der Bestätigung wird Audio weder gespeichert noch hochgeladen; der Stromverbrauch steigt und die Mikrofonanzeige bleibt aktiv.',
       muteDuringRecordingLabel: 'Während der Aufnahme stummschalten',
       muteDuringRecordingDesc:
         'Schaltet die Systemausgabe während der Spracheingabe vorübergehend stumm, um Lautsprecherechos zu vermeiden.',

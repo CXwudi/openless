@@ -51,6 +51,7 @@ export let mockSettings: UserPreferences = {
   capsuleTranscriptFontSize: 14,
   muteDuringRecording: false,
   stableTranscriptionEnabled: false,
+  lowLatencyDictationEnabled: false,
   audioCueOnRecord: true,
   silenceAutoStopEnabled: false,
   silenceAutoStopSeconds: 3,

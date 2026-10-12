@@ -13,10 +13,11 @@ use futures_util::future::BoxFuture;
 use crate::dictation_context::{DictationContext, DictationOutputTarget};
 use crate::errors::{BackendError, BackendErrorCode};
 use crate::ports::{
-    ActiveRecording, AudioCapture, AudioConsumer, AudioRecorder, CapturedPcm, DictationEngine,
-    EngineFailure, EngineFailureStage, EngineProgress, EngineProgressSink, EngineResult,
-    EngineStage, PreparedTranscription, RecordingArchive, RecordingProgressSink, TextPolisher,
-    TextStreamChunk, TextStreamSink, TranscriptionEngine, TranscriptionSession, VoiceCapture,
+    ActiveRecording, AudioCapture, AudioConsumer, AudioRecorder, CaptureStartRequest, CapturedPcm,
+    DictationEngine, EngineFailure, EngineFailureStage, EngineProgress, EngineProgressSink,
+    EngineResult, EngineStage, PendingAudioCapture, PreparedTranscription, RecordingArchive,
+    RecordingProgressSink, TextPolisher, TextStreamChunk, TextStreamSink, TranscriptionEngine,
+    TranscriptionSession, VoiceCapture,
 };
 use crate::types::{PolishDelta, SessionId, TranscriptDelta};
 
@@ -39,6 +40,7 @@ pub struct PipelineDictationEngine {
     polisher: Arc<dyn TextPolisher>,
     polish_failure_policy: PolishFailurePolicy,
     sessions: Arc<Mutex<HashMap<SessionId, Arc<PipelineSession>>>>,
+    pending_captures: Arc<Mutex<HashMap<u64, Box<dyn PendingAudioCapture>>>>,
 }
 
 struct PipelineSession {
@@ -107,6 +109,7 @@ impl PipelineDictationEngine {
             polisher,
             polish_failure_policy: PolishFailurePolicy::UseRawText,
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            pending_captures: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -117,6 +120,56 @@ impl PipelineDictationEngine {
 }
 
 impl DictationEngine for PipelineDictationEngine {
+    fn arm_audio_capture(
+        &self,
+        request: CaptureStartRequest,
+    ) -> Result<Box<dyn PendingAudioCapture>, BackendError> {
+        self.recorder.arm_capture(request)
+    }
+
+    fn start_with_audio_capture(
+        &self,
+        session_id: SessionId,
+        context: Arc<DictationContext>,
+        progress: Arc<dyn EngineProgressSink>,
+        capture: Box<dyn PendingAudioCapture>,
+    ) -> BoxFuture<'static, Result<(), BackendError>> {
+        let generation = context.recording.capture_generation;
+        let external_audio =
+            context.audio_source == crate::dictation_context::DictationAudioSource::External;
+        let pending_captures = Arc::clone(&self.pending_captures);
+        let start = self.start(session_id, context, progress);
+        Box::pin(async move {
+            if external_audio {
+                let _ = capture.discard().await;
+                return start.await;
+            }
+            let Some(generation) = generation else {
+                let _ = capture.discard().await;
+                return Err(BackendError::new(
+                    BackendErrorCode::InvalidArgument,
+                    "provisional capture is missing its physical generation",
+                ));
+            };
+            let replaced = pending_captures
+                .lock()
+                .expect("pending capture lock poisoned")
+                .insert(generation, capture);
+            if let Some(replaced) = replaced {
+                let _ = replaced.discard().await;
+                return Err(BackendError::new(
+                    BackendErrorCode::Busy,
+                    "a provisional capture already owns this physical generation",
+                ));
+            }
+            let result = start.await;
+            if result.is_err() {
+                let _ = discard_pending_capture(&pending_captures, generation).await;
+            }
+            result
+        })
+    }
+
     fn start(
         &self,
         session_id: SessionId,
@@ -126,6 +179,7 @@ impl DictationEngine for PipelineDictationEngine {
         let recorder = Arc::clone(&self.recorder);
         let transcription_engine = Arc::clone(&self.transcription);
         let sessions = Arc::clone(&self.sessions);
+        let pending_captures = Arc::clone(&self.pending_captures);
         Box::pin(async move {
             let session = Arc::new(PipelineSession::new(Arc::clone(&context)));
             {
@@ -207,10 +261,40 @@ impl DictationEngine for PipelineDictationEngine {
             }
 
             let audio_consumer: Arc<dyn AudioConsumer> = buffered.clone();
-            let recording = match recorder
-                .start(session_id, context, audio_consumer, recording_progress)
-                .await
+            let pending = context.recording.capture_generation.and_then(|generation| {
+                pending_captures
+                    .lock()
+                    .expect("pending capture lock poisoned")
+                    .remove(&generation)
+            });
+            let pending = if context.audio_source
+                == crate::dictation_context::DictationAudioSource::External
             {
+                if let Some(capture) = pending {
+                    let _ = capture.discard().await;
+                }
+                None
+            } else {
+                pending
+            };
+            let recording = match pending {
+                Some(capture) => {
+                    capture
+                        .commit(
+                            session_id,
+                            Arc::clone(&context),
+                            Arc::clone(&audio_consumer),
+                            Arc::clone(&recording_progress),
+                        )
+                        .await
+                }
+                None => {
+                    recorder
+                        .start(session_id, context, audio_consumer, recording_progress)
+                        .await
+                }
+            };
+            let recording = match recording {
                 Ok(recording) => recording,
                 Err(error) => {
                     let _ = cancel_transcription_once(&session, Arc::clone(&buffered)).await;
@@ -778,6 +862,7 @@ impl DictationEngine for PipelineDictationEngine {
     fn cancel(&self, session_id: SessionId) -> BoxFuture<'static, Result<(), BackendError>> {
         let sessions = Arc::clone(&self.sessions);
         let polisher = Arc::clone(&self.polisher);
+        let pending_captures = Arc::clone(&self.pending_captures);
         Box::pin(async move {
             let Some(session) = sessions
                 .lock()
@@ -792,6 +877,7 @@ impl DictationEngine for PipelineDictationEngine {
             }
             let preserve_quick_note_archive = session.context().output_target
                 == crate::dictation_context::DictationOutputTarget::QuickNote;
+            let capture_generation = session.context().recording.capture_generation;
 
             let (recording, transcription, buffered) = {
                 let mut resources = session
@@ -805,6 +891,12 @@ impl DictationEngine for PipelineDictationEngine {
                 )
             };
             let mut first_error = None;
+            if let Some(generation) = capture_generation {
+                retain_first_error(
+                    &mut first_error,
+                    discard_pending_capture(&pending_captures, generation).await,
+                );
+            }
             if let Some(recording) = recording {
                 let archive = recording.archive();
                 retain_first_error(&mut first_error, recording.stop().await);
@@ -893,6 +985,20 @@ fn find_session(
                 "dictation pipeline session is not active",
             )
         })
+}
+
+async fn discard_pending_capture(
+    pending_captures: &Arc<Mutex<HashMap<u64, Box<dyn PendingAudioCapture>>>>,
+    generation: u64,
+) -> Result<(), BackendError> {
+    let capture = pending_captures
+        .lock()
+        .expect("pending capture lock poisoned")
+        .remove(&generation);
+    match capture {
+        Some(capture) => capture.discard().await,
+        None => Ok(()),
+    }
 }
 
 fn remove_session(

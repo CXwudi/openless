@@ -121,6 +121,12 @@ fn preferences_json_preserving_unknown(
     Ok(value)
 }
 
+fn strip_local_only_preferences(value: &mut serde_json::Value) {
+    if let serde_json::Value::Object(object) = value {
+        object.remove("lowLatencyDictationEnabled");
+    }
+}
+
 fn preserve_unknown_fields(
     canonical: &mut serde_json::Value,
     old: &serde_json::Value,
@@ -284,23 +290,31 @@ impl PreferencesStore {
             *state = serde_json::from_slice(&bytes)
                 .map_err(|_| persistence_error("decode sync preferences"))?;
         }
-        preferences_json_preserving_unknown(&self.path, &state)
+        let mut value = preferences_json_preserving_unknown(&self.path, &state)?;
+        strip_local_only_preferences(&mut value);
+        Ok(value)
     }
 
     pub(crate) fn sync_replace_raw(
         &self,
-        value: serde_json::Value,
+        mut value: serde_json::Value,
         permit: &crate::cloud_sync_e2ee_store::gate::ExclusivePermit,
     ) -> Result<(), BackendError> {
         crate::cloud_sync_e2ee_store::gate::require_exclusive(&self.path, permit)?;
-        let parsed: UserPreferences = serde_json::from_value(value.clone())
-            .map_err(|_| persistence_error("validate restored preferences"))?;
-        let bytes = serde_json::to_vec_pretty(&value)
-            .map_err(|_| persistence_error("encode restored preferences"))?;
         let mut state = self
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let serde_json::Value::Object(object) = &mut value {
+            object.insert(
+                "lowLatencyDictationEnabled".to_string(),
+                serde_json::Value::Bool(state.low_latency_dictation_enabled),
+            );
+        }
+        let parsed: UserPreferences = serde_json::from_value(value.clone())
+            .map_err(|_| persistence_error("validate restored preferences"))?;
+        let bytes = serde_json::to_vec_pretty(&value)
+            .map_err(|_| persistence_error("encode restored preferences"))?;
         crate::persistence::atomic_write_for_sync(&self.path, &bytes, permit)?;
         *state = parsed;
         Ok(())
@@ -458,6 +472,23 @@ mod tests {
         assert_eq!(saved.microphone_device_name, "External Mic");
 
         let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn cloud_snapshot_omits_local_microphone_warm_capture_preference() {
+        let mut value = serde_json::json!({
+            "lowLatencyDictationEnabled": true,
+            "microphoneDeviceName": "Built-in Mic",
+        });
+        strip_local_only_preferences(&mut value);
+        assert!(value.get("lowLatencyDictationEnabled").is_none());
+        assert_eq!(value["microphoneDeviceName"], "Built-in Mic");
+    }
+
+    #[test]
+    fn missing_low_latency_preference_defaults_off() {
+        let preferences: UserPreferences = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(!preferences.low_latency_dictation_enabled);
     }
 
     #[test]

@@ -159,6 +159,13 @@ pub const PREFERENCE_FIELDS: &[PreferenceField] = &[
         reason: "device_bound",
     },
     PreferenceField {
+        rust_name: "low_latency_dictation_enabled",
+        key: "lowLatencyDictationEnabled",
+        class: PreferenceClass::Excluded,
+        shape: PreferenceShape::Boolean,
+        reason: "local_only_microphone_capture",
+    },
+    PreferenceField {
         rust_name: "active_asr_provider",
         key: "activeAsrProvider",
         class: PreferenceClass::Excluded,

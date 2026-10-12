@@ -169,6 +169,9 @@ function context(native = true, embedded = false) {
       calls.dismiss++;
       return pending.dismiss?.promise;
     },
+    getSelectionPolishPreview: async () => null,
+    confirmSelectionPolishPreview: async () => {},
+    cancelSelectionPolishPreview: async () => {},
     getSelectionVoicePreview: async (session) => {
       calls.preview.push(session);
       return pending.preview?.promise ?? { text: ' fixture edit ' };

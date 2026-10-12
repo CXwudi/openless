@@ -1474,6 +1474,9 @@ export const ja: typeof zhCN = {
       stableTranscriptionLabel: '安定モード（録音後に文字起こし）',
       stableTranscriptionDesc:
         '有効にすると、録音中は ASR に接続せず、停止後に音声全体を送信します。結果は遅くなりますが、接続遅延や録音中のネットワーク変動に録音が影響されません。',
+      lowLatencyDictationLabel: '低遅延キャプチャ',
+      lowLatencyDictationDesc:
+        'マイクストリームを準備し、最大 500 ミリ秒をメモリに保持して、ホットキー直後の音声が欠落しにくくします。録音を確定するまで音声は保存・アップロードされません。電力を多く使い、マイク使用中の表示が続きます。',
       muteDuringRecordingLabel: '録音中はミュート',
       muteDuringRecordingDesc:
         '録音中にシステム出力を一時的にミュートし、スピーカーのエコーを防ぎます。',

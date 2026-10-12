@@ -1415,6 +1415,9 @@ export const zhCN = {
       stableTranscriptionLabel: '稳定模式（先录音后识别）',
       stableTranscriptionDesc:
         '开启后，录音期间不连接 ASR，停止后才提交整段音频。结果出现更晚，但录音不受建连延迟和录音期间网络抖动影响。',
+      lowLatencyDictationLabel: '低延迟录音',
+      lowLatencyDictationDesc:
+        '保持麦克风流就绪，并在内存中保留最多 500 毫秒音频，减少按下热键后第一句话被漏识别的情况。确认录音前不会保存或上传音频；此模式会增加功耗并保持系统麦克风指示灯亮起。',
       muteDuringRecordingLabel: '录音时静音',
       muteDuringRecordingDesc: '录音期间临时静音系统输出，避免扬声器回音。',
       audioCueLabel: '录音提示音',

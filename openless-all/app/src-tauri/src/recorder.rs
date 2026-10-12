@@ -12,10 +12,11 @@
 //! - The main thread signals "stop" via `AtomicBool` and `join`s the thread; the stream is
 //!   `drop`ped inside that thread.
 
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender, TrySendError};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -34,6 +35,8 @@ const LEVEL_RMS_GAIN: f32 = 4.0;
 /// dropped instead of blocking the realtime callback; ASR still receives the full PCM, and
 /// archive messages accepted before stop are fully flushed.
 const WAV_ARCHIVE_QUEUE_CAPACITY: usize = 256;
+/// The provisional capture cap is 500 ms at the canonical 16 kHz mono i16 format.
+pub(crate) const STAGED_CAPTURE_MAX_BYTES: usize = TARGET_SAMPLE_RATE as usize;
 
 /// Downstream that receives resampled Int16 PCM bytes (little-endian).
 pub trait AudioConsumer: Send + Sync {
@@ -61,7 +64,7 @@ pub struct MicrophoneDevice {
 }
 
 /// Capture error.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum RecorderError {
     #[error("microphone permission denied")]
     PermissionDenied,
@@ -144,6 +147,871 @@ impl WavArchiveWriter {
     }
 }
 
+#[derive(Clone)]
+struct ForwardTarget {
+    consumer: Arc<dyn AudioConsumer>,
+    level_handler: Arc<dyn Fn(f32) + Send + Sync>,
+    archive: Option<Arc<WavArchiveWriter>>,
+}
+
+enum CaptureSinkState {
+    Staging { pcm: VecDeque<u8> },
+    Promoted(ForwardTarget),
+    Discarded,
+}
+
+/// Callback sink used while Core prepares the provider. The delivery gate makes
+/// promotion linearizable without ever invoking downstream code under the state lock.
+struct CaptureSink {
+    state: Mutex<CaptureSinkState>,
+    delivery_gate: Mutex<()>,
+    max_bytes: usize,
+}
+
+impl CaptureSink {
+    fn new(max_bytes: usize) -> Arc<Self> {
+        let max_bytes = (max_bytes.max(2) & !1).min(STAGED_CAPTURE_MAX_BYTES.max(2));
+        Arc::new(Self {
+            state: Mutex::new(CaptureSinkState::Staging {
+                pcm: VecDeque::with_capacity(max_bytes),
+            }),
+            delivery_gate: Mutex::new(()),
+            max_bytes,
+        })
+    }
+
+    fn deliver(target: &ForwardTarget, pcm: &[u8]) {
+        target.consumer.consume_pcm_chunk(pcm);
+        if let Some(archive) = target.archive.as_ref() {
+            archive.append(pcm);
+        }
+    }
+
+    fn promote(
+        &self,
+        consumer: Arc<dyn AudioConsumer>,
+        level_handler: Arc<dyn Fn(f32) + Send + Sync>,
+        archive: Option<Arc<WavArchiveWriter>>,
+    ) -> Result<(), RecorderError> {
+        let _delivery = self.delivery_gate.lock();
+        let prefix = {
+            let mut state = self.state.lock();
+            let CaptureSinkState::Staging { pcm } = &mut *state else {
+                return match &*state {
+                    CaptureSinkState::Discarded => Err(RecorderError::EngineFailed(
+                        "provisional capture was discarded".into(),
+                    )),
+                    CaptureSinkState::Promoted(_) => Err(RecorderError::EngineFailed(
+                        "provisional capture was already promoted".into(),
+                    )),
+                    CaptureSinkState::Staging { .. } => unreachable!(),
+                };
+            };
+            let prefix = pcm.drain(..).collect::<Vec<_>>();
+            *state = CaptureSinkState::Promoted(ForwardTarget {
+                consumer,
+                level_handler,
+                archive,
+            });
+            prefix
+        };
+        let target = {
+            let state = self.state.lock();
+            match &*state {
+                CaptureSinkState::Promoted(target) => Some(target.clone()),
+                CaptureSinkState::Staging { .. } | CaptureSinkState::Discarded => None,
+            }
+        };
+        if let Some(target) = target {
+            if !prefix.is_empty() {
+                Self::deliver(&target, &prefix);
+                (target.level_handler)(pcm_rms_level(&prefix));
+            }
+        }
+        Ok(())
+    }
+
+    fn discard(&self) {
+        let _delivery = self.delivery_gate.lock();
+        let mut state = self.state.lock();
+        match &mut *state {
+            CaptureSinkState::Staging { pcm } => {
+                pcm.clear();
+                *state = CaptureSinkState::Discarded;
+            }
+            CaptureSinkState::Discarded | CaptureSinkState::Promoted(_) => {}
+        }
+    }
+}
+
+impl AudioConsumer for CaptureSink {
+    fn consume_pcm_chunk(&self, pcm: &[u8]) {
+        if pcm.is_empty() {
+            return;
+        }
+        let target = {
+            let mut state = self.state.lock();
+            match &mut *state {
+                CaptureSinkState::Staging { pcm: buffered } => {
+                    let even_len = pcm.len() & !1;
+                    let capacity = self.max_bytes & !1;
+                    let remaining = capacity.saturating_sub(buffered.len());
+                    buffered.extend(pcm[..even_len.min(remaining)].iter().copied());
+                    None
+                }
+                CaptureSinkState::Promoted(target) => Some(ForwardTarget {
+                    consumer: Arc::clone(&target.consumer),
+                    level_handler: Arc::clone(&target.level_handler),
+                    archive: target.archive.clone(),
+                }),
+                CaptureSinkState::Discarded => None,
+            }
+        };
+        if let Some(target) = target {
+            let _delivery = self.delivery_gate.lock();
+            Self::deliver(&target, pcm);
+        }
+    }
+}
+
+impl CaptureSink {
+    fn publish_level(&self, level: f32) {
+        let target = {
+            let state = self.state.lock();
+            match &*state {
+                CaptureSinkState::Promoted(target) => Some(Arc::clone(&target.level_handler)),
+                CaptureSinkState::Staging { .. } | CaptureSinkState::Discarded => None,
+            }
+        };
+        if let Some(level_handler) = target {
+            let _delivery = self.delivery_gate.lock();
+            level_handler(level);
+        }
+    }
+}
+
+struct WarmCaptureSink {
+    state: Mutex<WarmCaptureSinkState>,
+    delivery_gate: Mutex<()>,
+    max_bytes: usize,
+}
+
+enum WarmCaptureSinkState {
+    Ring {
+        pcm: VecDeque<u8>,
+        claims: HashMap<u64, WarmCaptureClaim>,
+    },
+}
+
+enum WarmCaptureClaim {
+    Staging {
+        pcm: VecDeque<u8>,
+        pre_roll_bytes: usize,
+        max_level: f32,
+    },
+    Promoted(ForwardTarget),
+}
+
+impl WarmCaptureSink {
+    fn new(max_bytes: usize) -> Arc<Self> {
+        let max_bytes = (max_bytes.max(2) & !1).min(STAGED_CAPTURE_MAX_BYTES.max(2));
+        Arc::new(Self {
+            state: Mutex::new(WarmCaptureSinkState::Ring {
+                pcm: VecDeque::with_capacity(max_bytes),
+                claims: HashMap::new(),
+            }),
+            delivery_gate: Mutex::new(()),
+            max_bytes,
+        })
+    }
+
+    fn append_bounded(buffer: &mut VecDeque<u8>, pcm: &[u8], max_bytes: usize) {
+        let even_len = pcm.len() & !1;
+        buffer.extend(pcm[..even_len].iter().copied());
+        while buffer.len() > max_bytes {
+            let _ = buffer.pop_front();
+            let _ = buffer.pop_front();
+        }
+    }
+
+    fn append_staged(
+        buffer: &mut VecDeque<u8>,
+        pre_roll_bytes: &mut usize,
+        pcm: &[u8],
+        max_bytes: usize,
+    ) {
+        let even_len = pcm.len() & !1;
+        let incoming = &pcm[..even_len];
+        let excess = buffer.len().saturating_add(incoming.len()).saturating_sub(max_bytes);
+        let evictable = excess.min(*pre_roll_bytes);
+        for _ in 0..(evictable / 2) {
+            let _ = buffer.pop_front();
+            let _ = buffer.pop_front();
+        }
+        *pre_roll_bytes -= evictable;
+        let available = max_bytes.saturating_sub(buffer.len()) & !1;
+        buffer.extend(incoming[..incoming.len().min(available)].iter().copied());
+    }
+
+    fn arm(&self, press_id: u64) -> Result<(), RecorderError> {
+        let _delivery = self.delivery_gate.lock();
+        let mut state = self.state.lock();
+        let WarmCaptureSinkState::Ring { pcm, claims } = &mut *state;
+        if claims.contains_key(&press_id) {
+            return Err(RecorderError::EngineFailed(
+                "warm capture generation is already armed".into(),
+            ));
+        }
+        claims.insert(
+            press_id,
+            WarmCaptureClaim::Staging {
+                pcm: pcm.clone(),
+                pre_roll_bytes: pcm.len(),
+                max_level: 0.0,
+            },
+        );
+        Ok(())
+    }
+
+    fn promote(
+        &self,
+        press_id: u64,
+        consumer: Arc<dyn AudioConsumer>,
+        level_handler: Arc<dyn Fn(f32) + Send + Sync>,
+        archive: Option<Arc<WavArchiveWriter>>,
+    ) -> Result<(), RecorderError> {
+        let _delivery = self.delivery_gate.lock();
+        let (prefix, staged_level) = {
+            let mut state = self.state.lock();
+            let WarmCaptureSinkState::Ring { claims, .. } = &mut *state;
+            let Some(claim) = claims.remove(&press_id) else {
+                return Err(RecorderError::EngineFailed(
+                    "warm provisional capture was not armed".into(),
+                ));
+            };
+            let WarmCaptureClaim::Staging {
+                pcm, max_level, ..
+            } = claim
+            else {
+                return Err(RecorderError::EngineFailed(
+                    "warm provisional capture was already promoted".into(),
+                ));
+            };
+            let prefix = pcm.into_iter().collect::<Vec<_>>();
+            claims.insert(
+                press_id,
+                WarmCaptureClaim::Promoted(ForwardTarget {
+                    consumer,
+                    level_handler,
+                    archive,
+                }),
+            );
+            (prefix, max_level)
+        };
+        let target = {
+            let state = self.state.lock();
+            let WarmCaptureSinkState::Ring { claims, .. } = &*state;
+            match claims.get(&press_id) {
+                Some(WarmCaptureClaim::Promoted(target)) => Some(target.clone()),
+                Some(WarmCaptureClaim::Staging { .. }) | None => None,
+            }
+        };
+        if let Some(target) = target {
+            CaptureSink::deliver(&target, &prefix);
+            (target.level_handler)(staged_level);
+        }
+        Ok(())
+    }
+
+    fn discard(&self, press_id: u64) {
+        let _delivery = self.delivery_gate.lock();
+        let mut state = self.state.lock();
+        let WarmCaptureSinkState::Ring { claims, .. } = &mut *state;
+        claims.remove(&press_id);
+    }
+
+    fn take_claim(&self, press_id: u64) -> Option<ForwardTarget> {
+        let _delivery = self.delivery_gate.lock();
+        let mut state = self.state.lock();
+        let WarmCaptureSinkState::Ring { claims, .. } = &mut *state;
+        match claims.remove(&press_id) {
+            Some(WarmCaptureClaim::Promoted(target)) => Some(target),
+            Some(WarmCaptureClaim::Staging { .. }) | None => None,
+        }
+    }
+
+    fn staging_claim_ids(&self) -> Vec<u64> {
+        let _delivery = self.delivery_gate.lock();
+        let state = self.state.lock();
+        let WarmCaptureSinkState::Ring { claims, .. } = &*state;
+        claims
+            .iter()
+            .filter_map(|(press_id, claim)| {
+                matches!(claim, WarmCaptureClaim::Staging { .. }).then_some(*press_id)
+            })
+            .collect()
+    }
+
+    fn has_claims(&self) -> bool {
+        let _delivery = self.delivery_gate.lock();
+        let state = self.state.lock();
+        let WarmCaptureSinkState::Ring { claims, .. } = &*state;
+        !claims.is_empty()
+    }
+
+    fn has_promoted_claims(&self) -> bool {
+        let _delivery = self.delivery_gate.lock();
+        let state = self.state.lock();
+        let WarmCaptureSinkState::Ring { claims, .. } = &*state;
+        claims
+            .values()
+            .any(|claim| matches!(claim, WarmCaptureClaim::Promoted(_)))
+    }
+
+    fn invalidate_staging(&self) {
+        let _delivery = self.delivery_gate.lock();
+        let mut state = self.state.lock();
+        let WarmCaptureSinkState::Ring { pcm, claims } = &mut *state;
+        pcm.clear();
+        claims.retain(|_, claim| matches!(claim, WarmCaptureClaim::Promoted(_)));
+    }
+
+    fn clear(&self) -> Vec<Arc<WavArchiveWriter>> {
+        let _delivery = self.delivery_gate.lock();
+        let mut state = self.state.lock();
+        let WarmCaptureSinkState::Ring { pcm, claims } = &mut *state;
+        pcm.clear();
+        let claims = std::mem::take(claims);
+        claims
+            .into_values()
+            .filter_map(|claim| match claim {
+                WarmCaptureClaim::Staging { .. } => None,
+                WarmCaptureClaim::Promoted(target) => target.archive,
+            })
+            .collect()
+    }
+}
+
+impl AudioConsumer for WarmCaptureSink {
+    fn consume_pcm_chunk(&self, pcm: &[u8]) {
+        if pcm.is_empty() {
+            return;
+        }
+        let _delivery = self.delivery_gate.lock();
+        let mut targets = Vec::new();
+        {
+            let mut state = self.state.lock();
+            let WarmCaptureSinkState::Ring {
+                pcm: ring,
+                claims,
+            } = &mut *state;
+            Self::append_bounded(ring, pcm, self.max_bytes);
+            for claim in claims.values_mut() {
+                match claim {
+                    WarmCaptureClaim::Staging {
+                        pcm: staged,
+                        pre_roll_bytes,
+                        ..
+                    } => {
+                        Self::append_staged(staged, pre_roll_bytes, pcm, self.max_bytes);
+                    }
+                    WarmCaptureClaim::Promoted(target) => targets.push(target.clone()),
+                }
+            }
+        }
+        for target in targets {
+            CaptureSink::deliver(&target, pcm);
+        }
+    }
+}
+
+impl WarmCaptureSink {
+    fn publish_level(&self, level: f32) {
+        let _delivery = self.delivery_gate.lock();
+        let level_handlers = {
+            let mut state = self.state.lock();
+            let WarmCaptureSinkState::Ring { claims, .. } = &mut *state;
+            let mut level_handlers = Vec::new();
+            for claim in claims.values_mut() {
+                match claim {
+                    WarmCaptureClaim::Promoted(target) => {
+                        level_handlers.push(Arc::clone(&target.level_handler));
+                    }
+                    WarmCaptureClaim::Staging { max_level, .. } => {
+                        *max_level = (*max_level).max(level);
+                    }
+                }
+            }
+            level_handlers
+        };
+        for level_handler in level_handlers {
+            level_handler(level);
+        }
+    }
+}
+
+/// A committed or discarded claim on the process-wide warm microphone stream.
+/// The warm stream can have multiple provisional generations, but only promoted
+/// claims receive recording levels and downstream PCM.
+pub(crate) struct WarmStagedRecorder {
+    hub: Arc<WarmCaptureHub>,
+    press_id: u64,
+    consumed: bool,
+}
+
+pub(crate) struct WarmActiveCapture {
+    hub: Arc<WarmCaptureHub>,
+    press_id: u64,
+}
+
+impl WarmStagedRecorder {
+    pub(crate) fn capture_hub(&self) -> Arc<WarmCaptureHub> {
+        Arc::clone(&self.hub)
+    }
+
+    pub(crate) fn fallback_device_name(&self) -> Option<String> {
+        self.hub.device_name.lock().clone()
+    }
+
+    pub(crate) fn commit(
+        mut self,
+        consumer: Arc<dyn AudioConsumer>,
+        level_handler: Arc<dyn Fn(f32) + Send + Sync>,
+        audio_archive_path: Option<PathBuf>,
+    ) -> Result<(WarmActiveCapture, Receiver<RecorderError>, bool), RecorderError> {
+        let archive_path = audio_archive_path;
+        let archive_writer = archive_path.as_ref().and_then(|path| match WavArchiveWriter::create(path) {
+            Ok(writer) => Some(Arc::new(writer)),
+            Err(error) => {
+                log::warn!("[recorder] wav archive create failed at {path:?}: {error}");
+                None
+            }
+        });
+        let archive_active = archive_writer.is_some();
+        let result = self.hub.promote(
+            self.press_id,
+            consumer,
+            level_handler,
+            archive_writer.clone(),
+        );
+        let runtime_errors = match result {
+            Ok(runtime_errors) => runtime_errors,
+            Err(error) => {
+                if let Some(archive) = archive_writer {
+                    archive.finish();
+                }
+                if let Some(path) = archive_path {
+                    let _ = std::fs::remove_file(path);
+                }
+                self.consumed = true;
+                return Err(error);
+            }
+        };
+        self.consumed = true;
+        Ok((
+            WarmActiveCapture {
+                hub: Arc::clone(&self.hub),
+                press_id: self.press_id,
+            },
+            runtime_errors,
+            archive_active,
+        ))
+    }
+
+    pub(crate) fn discard(mut self) -> Result<(), RecorderError> {
+        self.hub.release_claim(self.press_id);
+        self.consumed = true;
+        Ok(())
+    }
+}
+
+impl Drop for WarmStagedRecorder {
+    fn drop(&mut self) {
+        if !self.consumed {
+            self.hub.release_claim(self.press_id);
+        }
+    }
+}
+
+impl WarmActiveCapture {
+    pub(crate) fn stop(self) {
+        self.hub.release_claim(self.press_id);
+    }
+}
+
+/// Owns the optional idle microphone stream. The stream and its ring are never
+/// connected to an ASR consumer or archive until a matching press is promoted.
+pub(crate) struct WarmCaptureHub {
+    sink: Arc<WarmCaptureSink>,
+    recorder: Mutex<Option<Recorder>>,
+    runtime_errors: Mutex<HashMap<u64, Sender<RecorderError>>>,
+    runtime_fallback_claims: Mutex<HashSet<u64>>,
+    enabled: AtomicBool,
+    preview_active: AtomicBool,
+    cold_capture_active: AtomicBool,
+    pending_configuration: Mutex<Option<(bool, Option<String>)>>,
+    stream_generation: AtomicU64,
+    lifecycle_gate: Mutex<()>,
+    device_name: Mutex<Option<String>>,
+}
+
+impl WarmCaptureHub {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            sink: WarmCaptureSink::new(STAGED_CAPTURE_MAX_BYTES),
+            recorder: Mutex::new(None),
+            runtime_errors: Mutex::new(HashMap::new()),
+            runtime_fallback_claims: Mutex::new(HashSet::new()),
+            enabled: AtomicBool::new(false),
+            preview_active: AtomicBool::new(false),
+            cold_capture_active: AtomicBool::new(false),
+            pending_configuration: Mutex::new(None),
+            stream_generation: AtomicU64::new(0),
+            lifecycle_gate: Mutex::new(()),
+            device_name: Mutex::new(None),
+        })
+    }
+
+    fn notify_runtime_error(&self, error: RecorderError) {
+        let senders = std::mem::take(&mut *self.runtime_errors.lock());
+        for sender in senders.into_values() {
+            let _ = sender.send(error.clone());
+        }
+    }
+
+    pub(crate) fn configure(&self, enabled: bool, device_name: Option<String>) {
+        let _lifecycle = self.lifecycle_gate.lock();
+        self.configure_locked(enabled, device_name);
+    }
+
+    fn configure_locked(&self, enabled: bool, device_name: Option<String>) {
+        let device_changed = *self.device_name.lock() != device_name;
+        if self.cold_capture_active.load(Ordering::Acquire) {
+            *self.pending_configuration.lock() = Some((enabled, device_name));
+            return;
+        }
+        if (device_changed || !enabled) && self.sink.has_promoted_claims() {
+            let staging_claims = self.sink.staging_claim_ids();
+            self.runtime_fallback_claims
+                .lock()
+                .extend(staging_claims);
+            *self.pending_configuration.lock() = Some((enabled, device_name));
+            self.sink.invalidate_staging();
+            return;
+        }
+        self.pending_configuration.lock().take();
+        if !enabled {
+            self.enabled.store(false, Ordering::Release);
+            self.stream_generation.fetch_add(1, Ordering::AcqRel);
+            let staging_claims = self.sink.staging_claim_ids();
+            let recorder = self.recorder.lock().take();
+            let archives = self.sink.clear();
+            self.runtime_fallback_claims
+                .lock()
+                .extend(staging_claims);
+            self.notify_runtime_error(RecorderError::EngineFailed(
+                "warm capture configuration changed".into(),
+            ));
+            *self.device_name.lock() = device_name;
+            for archive in archives {
+                archive.finish();
+            }
+            if let Some(recorder) = recorder {
+                recorder.stop();
+            }
+            return;
+        }
+
+        self.enabled.store(true, Ordering::Release);
+        if device_changed {
+            self.stream_generation.fetch_add(1, Ordering::AcqRel);
+            let staging_claims = self.sink.staging_claim_ids();
+            let recorder = self.recorder.lock().take();
+            let archives = self.sink.clear();
+            self.runtime_fallback_claims
+                .lock()
+                .extend(staging_claims);
+            self.notify_runtime_error(RecorderError::EngineFailed(
+                "warm capture configuration changed".into(),
+            ));
+            *self.device_name.lock() = device_name.clone();
+            for archive in archives {
+                archive.finish();
+            }
+            if let Some(recorder) = recorder {
+                recorder.stop();
+            }
+            if !self.preview_active.load(Ordering::Acquire) {
+                let _ = self.ensure_started_locked(device_name);
+            }
+            return;
+        }
+        if self.preview_active.load(Ordering::Acquire) {
+            return;
+        }
+        let _ = self.ensure_started_locked(device_name);
+    }
+
+    fn ensure_started(&self, device_name: Option<String>) -> Result<(), RecorderError> {
+        let _lifecycle = self.lifecycle_gate.lock();
+        self.ensure_started_locked(device_name)
+    }
+
+    fn ensure_started_locked(&self, device_name: Option<String>) -> Result<(), RecorderError> {
+        if !self.enabled.load(Ordering::Acquire) {
+            return Err(RecorderError::EngineFailed(
+                "warm capture is disabled".into(),
+            ));
+        }
+        if self.preview_active.load(Ordering::Acquire) {
+            return Err(RecorderError::EngineFailed(
+                "warm capture is paused for microphone preview".into(),
+            ));
+        }
+        if self.recorder.lock().is_some() {
+            return Ok(());
+        }
+        let consumer: Arc<dyn AudioConsumer> = Arc::clone(&self.sink) as Arc<dyn AudioConsumer>;
+        let sink_for_level = Arc::clone(&self.sink);
+        let level_handler: Arc<dyn Fn(f32) + Send + Sync> = Arc::new(move |level| {
+            sink_for_level.publish_level(level);
+        });
+        let (recorder, runtime_errors, _) =
+            Recorder::start(device_name, consumer, level_handler, None)?;
+        let generation = self.stream_generation.fetch_add(1, Ordering::AcqRel) + 1;
+        *self.recorder.lock() = Some(recorder);
+        let hub = warm_capture_hub();
+        let _ = thread::Builder::new()
+            .name("openless-warm-capture-watchdog".into())
+            .spawn(move || {
+                if let Ok(error) = runtime_errors.recv() {
+                    log::warn!("[recorder] warm microphone stream stopped: {error}");
+                    hub.stop_after_runtime_error(generation, error);
+                }
+            });
+        Ok(())
+    }
+
+    fn stop_after_runtime_error(&self, generation: u64, error: RecorderError) {
+        let _lifecycle = self.lifecycle_gate.lock();
+        if self.stream_generation.load(Ordering::Acquire) != generation {
+            return;
+        }
+        self.stream_generation.fetch_add(1, Ordering::AcqRel);
+        let recorder = self.recorder.lock().take();
+        let staging_claims = self.sink.staging_claim_ids();
+        self.runtime_fallback_claims
+            .lock()
+            .extend(staging_claims);
+        let archives = self.sink.clear();
+        self.notify_runtime_error(error);
+        for archive in archives {
+            archive.finish();
+        }
+        if let Some(recorder) = recorder {
+            recorder.stop();
+        }
+    }
+
+    fn promote(
+        &self,
+        press_id: u64,
+        consumer: Arc<dyn AudioConsumer>,
+        level_handler: Arc<dyn Fn(f32) + Send + Sync>,
+        archive: Option<Arc<WavArchiveWriter>>,
+    ) -> Result<Receiver<RecorderError>, RecorderError> {
+        let _lifecycle = self.lifecycle_gate.lock();
+        let (runtime_error_tx, runtime_error_rx) = channel();
+        if let Err(error) = self
+            .sink
+            .promote(press_id, consumer, level_handler, archive)
+        {
+            let fallback_allowed = self.runtime_fallback_claims.lock().remove(&press_id);
+            if !fallback_allowed
+                && matches!(
+                    &error,
+                    RecorderError::EngineFailed(message)
+                        if message == "warm provisional capture was not armed"
+                )
+            {
+                return Err(RecorderError::EngineFailed(
+                    "warm provisional capture was invalidated".into(),
+                ));
+            }
+            return Err(error);
+        }
+        self.runtime_fallback_claims.lock().remove(&press_id);
+        self.runtime_errors.lock().insert(press_id, runtime_error_tx);
+        Ok(runtime_error_rx)
+    }
+
+    pub(crate) fn arm(
+        self: &Arc<Self>,
+        press_id: u64,
+        device_name: Option<String>,
+    ) -> Result<WarmStagedRecorder, RecorderError> {
+        if !self.enabled.load(Ordering::Acquire) {
+            return Err(RecorderError::EngineFailed(
+                "warm capture is disabled".into(),
+            ));
+        }
+        loop {
+            let lifecycle = self.lifecycle_gate.lock();
+            if *self.device_name.lock() != device_name {
+                drop(lifecycle);
+                self.configure(true, device_name.clone());
+                continue;
+            }
+            self.sink.arm(press_id)?;
+            if let Err(error) = self.ensure_started_locked(device_name.clone()) {
+                self.sink.discard(press_id);
+                return Err(error);
+            }
+            drop(lifecycle);
+            return Ok(WarmStagedRecorder {
+                hub: Arc::clone(self),
+                press_id,
+                consumed: false,
+            });
+        }
+    }
+
+    fn release_claim(&self, press_id: u64) {
+        let _lifecycle = self.lifecycle_gate.lock();
+        self.runtime_fallback_claims.lock().remove(&press_id);
+        let target = self.sink.take_claim(press_id);
+        self.runtime_errors.lock().remove(&press_id);
+        if let Some(target) = target {
+            if let Some(archive) = target.archive {
+                archive.finish();
+            }
+        }
+        if !self.sink.has_promoted_claims() {
+            let pending_configuration = self.pending_configuration.lock().take();
+            if let Some((enabled, device_name)) = pending_configuration {
+                self.configure_locked(enabled, device_name);
+            }
+        }
+    }
+
+    pub(crate) fn begin_cold_capture(&self) -> Result<(), RecorderError> {
+        let _lifecycle = self.lifecycle_gate.lock();
+        if self.cold_capture_active.swap(true, Ordering::AcqRel) {
+            return Err(RecorderError::EngineFailed(
+                "another microphone capture is already active".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn end_cold_capture(&self) {
+        let _lifecycle = self.lifecycle_gate.lock();
+        if !self.cold_capture_active.swap(false, Ordering::AcqRel) {
+            return;
+        }
+        let pending_configuration = self.pending_configuration.lock().take();
+        if let Some((enabled, device_name)) = pending_configuration {
+            self.configure_locked(enabled, device_name);
+        }
+    }
+
+    /// Temporarily stop the warm stream while the settings preview owns the microphone.
+    pub(crate) fn begin_preview(&self) -> bool {
+        let _lifecycle = self.lifecycle_gate.lock();
+        if self.cold_capture_active.load(Ordering::Acquire) || self.sink.has_claims() {
+            return false;
+        }
+        self.preview_active.store(true, Ordering::Release);
+        self.stream_generation.fetch_add(1, Ordering::AcqRel);
+        let recorder = self.recorder.lock().take();
+        let archives = self.sink.clear();
+        self.runtime_fallback_claims.lock().clear();
+        self.notify_runtime_error(RecorderError::EngineFailed(
+            "warm capture paused for microphone preview".into(),
+        ));
+        for archive in archives {
+            archive.finish();
+        }
+        if let Some(recorder) = recorder {
+            recorder.stop();
+        }
+        true
+    }
+
+    /// Resume the configured warm stream after the settings preview releases the microphone.
+    pub(crate) fn end_preview(&self) {
+        let _lifecycle = self.lifecycle_gate.lock();
+        self.preview_active.store(false, Ordering::Release);
+        if !self.enabled.load(Ordering::Acquire)
+            || self.cold_capture_active.load(Ordering::Acquire)
+        {
+            return;
+        }
+        let device_name = self.device_name.lock().clone();
+        if self.recorder.lock().is_none() {
+            let _ = self.ensure_started_locked(device_name);
+        }
+    }
+
+    pub(crate) fn stop(&self) {
+        let _lifecycle = self.lifecycle_gate.lock();
+        self.pending_configuration.lock().take();
+        self.enabled.store(false, Ordering::Release);
+        self.stream_generation.fetch_add(1, Ordering::AcqRel);
+        let recorder = self.recorder.lock().take();
+        let archives = self.sink.clear();
+        self.runtime_fallback_claims.lock().clear();
+        self.notify_runtime_error(RecorderError::EngineFailed(
+            "warm capture stopped".into(),
+        ));
+        *self.device_name.lock() = None;
+        for archive in archives {
+            archive.finish();
+        }
+        if let Some(recorder) = recorder {
+            recorder.stop();
+        }
+    }
+
+    /// Stop the warm stream while a legacy cold recorder owns the microphone, but keep the
+    /// preference enabled so the stream can be rebuilt when that recorder stops.
+    pub(crate) fn suspend_for_cold_capture(&self) {
+        let _lifecycle = self.lifecycle_gate.lock();
+        self.stream_generation.fetch_add(1, Ordering::AcqRel);
+        let recorder = self.recorder.lock().take();
+        let archives = self.sink.clear();
+        self.runtime_fallback_claims.lock().clear();
+        self.notify_runtime_error(RecorderError::EngineFailed(
+            "warm capture suspended for cold capture".into(),
+        ));
+        for archive in archives {
+            archive.finish();
+        }
+        if let Some(recorder) = recorder {
+            recorder.stop();
+        }
+    }
+
+    /// Rebuild the configured warm stream after a legacy cold recorder releases the microphone.
+    pub(crate) fn resume_after_cold_capture(&self) {
+        let _lifecycle = self.lifecycle_gate.lock();
+        if !self.enabled.load(Ordering::Acquire)
+            || self.preview_active.load(Ordering::Acquire)
+            || self.recorder.lock().is_some()
+        {
+            return;
+        }
+        let device_name = self.device_name.lock().clone();
+        let _ = self.ensure_started_locked(device_name);
+    }
+}
+
+static WARM_CAPTURE_HUB: OnceLock<Arc<WarmCaptureHub>> = OnceLock::new();
+
+pub(crate) fn warm_capture_hub() -> Arc<WarmCaptureHub> {
+    Arc::clone(WARM_CAPTURE_HUB.get_or_init(WarmCaptureHub::new))
+}
+
 fn run_wav_archive_writer(mut archiver: WavArchiver, receiver: Receiver<WavArchiveMessage>) {
     while let Ok(message) = receiver.recv() {
         match message {
@@ -158,6 +1026,13 @@ pub struct Recorder {
     stop_flag: Arc<AtomicBool>,
     join_handle: Mutex<Option<JoinHandle<()>>>,
     archive_writer: Option<Arc<WavArchiveWriter>>,
+}
+
+/// A native stream whose callback output remains memory-only until promotion.
+pub(crate) struct StagedRecorder {
+    recorder: Option<Recorder>,
+    runtime_errors: Option<Receiver<RecorderError>>,
+    sink: Arc<CaptureSink>,
 }
 
 impl Recorder {
@@ -280,6 +1155,91 @@ impl Recorder {
     }
 }
 
+impl Recorder {
+    pub(crate) fn start_staged(
+        microphone_device_name: Option<String>,
+        max_buffer_bytes: usize,
+    ) -> Result<StagedRecorder, RecorderError> {
+        let sink = CaptureSink::new(max_buffer_bytes);
+        let consumer: Arc<dyn AudioConsumer> = Arc::clone(&sink) as Arc<dyn AudioConsumer>;
+        let sink_for_level = Arc::clone(&sink);
+        let level_handler: Arc<dyn Fn(f32) + Send + Sync> = Arc::new(move |level| {
+            sink_for_level.publish_level(level);
+        });
+        let (recorder, runtime_errors, _) = Self::start(
+            microphone_device_name,
+            consumer,
+            level_handler,
+            None,
+        )?;
+        Ok(StagedRecorder {
+            recorder: Some(recorder),
+            runtime_errors: Some(runtime_errors),
+            sink,
+        })
+    }
+}
+
+impl StagedRecorder {
+    pub(crate) fn commit(
+        mut self,
+        consumer: Arc<dyn AudioConsumer>,
+        level_handler: Arc<dyn Fn(f32) + Send + Sync>,
+        audio_archive_path: Option<PathBuf>,
+    ) -> Result<(Recorder, Receiver<RecorderError>, bool), RecorderError> {
+        let archive_path = audio_archive_path;
+        let archive_writer = archive_path.as_ref().and_then(|path| match WavArchiveWriter::create(path) {
+            Ok(writer) => Some(Arc::new(writer)),
+            Err(error) => {
+                log::warn!("[recorder] wav archive create failed at {path:?}: {error}");
+                None
+            }
+        });
+        let archive_active = archive_writer.is_some();
+        if let Err(error) = self
+            .sink
+            .promote(consumer, level_handler, archive_writer.clone())
+        {
+            if let Some(archive) = archive_writer {
+                archive.finish();
+            }
+            if let Some(path) = archive_path {
+                let _ = std::fs::remove_file(path);
+            }
+            if let Some(recorder) = self.recorder.take() {
+                recorder.stop();
+            }
+            return Err(error);
+        }
+        let mut recorder = self.recorder.take().ok_or_else(|| {
+            RecorderError::EngineFailed("provisional recorder was already stopped".into())
+        })?;
+        recorder.archive_writer = archive_writer;
+        let runtime_errors = self.runtime_errors.take().ok_or_else(|| {
+            RecorderError::EngineFailed("provisional recorder runtime channel was unavailable".into())
+        })?;
+        Ok((recorder, runtime_errors, archive_active))
+    }
+
+    pub(crate) fn discard(mut self) -> Result<(), RecorderError> {
+        self.sink.discard();
+        if let Some(recorder) = self.recorder.take() {
+            recorder.stop();
+        }
+        Ok(())
+    }
+}
+
+impl Drop for StagedRecorder {
+    fn drop(&mut self) {
+        self.sink.discard();
+        if let Some(recorder) = self.recorder.take() {
+            recorder.stop();
+        }
+    }
+}
+
+/// Enumerate input devices, marking the system default device.
 pub fn list_input_devices() -> Result<Vec<MicrophoneDevice>, RecorderError> {
     let host = cpal::default_host();
     let default_name = host
@@ -977,6 +1937,20 @@ fn rms(samples: &[f32]) -> f32 {
     (sum_sq / samples.len() as f64).sqrt() as f32
 }
 
+fn pcm_rms_level(pcm: &[u8]) -> f32 {
+    let samples = pcm.as_chunks::<2>().0;
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum_sq = samples
+        .iter()
+        .map(|sample| i16::from_le_bytes([sample[0], sample[1]]) as f64)
+        .map(|sample| sample * sample)
+        .sum::<f64>();
+    let rms = (sum_sq / samples.len() as f64).sqrt() / i16::MAX as f64;
+    (rms as f32 * LEVEL_RMS_GAIN).clamp(0.0, 1.0)
+}
+
 /// Store the f32 peak approximately as an integer atomic in milli units (avoids an extra lock).
 fn update_peak(slot: &AtomicUsize, current: f32) {
     let scaled = (current * 1000.0).round().max(0.0) as usize;
@@ -1288,33 +2262,194 @@ mod tests {
     }
 
     #[test]
-    fn process_callback_ignores_empty_or_zero_channel_input_without_liveness_marker() {
-        let consumer = RecordingConsumer::default();
+    fn staged_sink_is_bounded_and_keeps_complete_samples() {
+        let sink = CaptureSink::new(6);
+        sink.consume_pcm_chunk(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        sink.consume_pcm_chunk(&[9]);
+
+        let state = sink.state.lock();
+        let CaptureSinkState::Staging { pcm } = &*state else {
+            panic!("sink was promoted unexpectedly");
+        };
+        assert_eq!(pcm.len(), 6);
+        assert_eq!(pcm.iter().copied().collect::<Vec<_>>(), vec![1, 2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn staged_sink_promotes_prefix_before_live_pcm_and_levels() {
+        let sink = CaptureSink::new(32);
+        let consumer = Arc::new(RecordingConsumer::default());
         let levels = Arc::new(StdMutex::new(Vec::new()));
         let levels_for_handler = Arc::clone(&levels);
-        let state = StreamState::new();
-
-        process_callback(
-            &[],
-            1,
-            TARGET_SAMPLE_RATE,
-            &consumer,
-            &move |level| levels_for_handler.lock().unwrap().push(level),
+        sink.consume_pcm_chunk(&[1, 2]);
+        sink.consume_pcm_chunk(&[3, 4]);
+        sink.promote(
+            Arc::clone(&consumer) as Arc<dyn AudioConsumer>,
+            Arc::new(move |level| levels_for_handler.lock().unwrap().push(level)),
             None,
-            &state,
-        );
-        process_callback(
-            &[0.25, -0.25],
-            0,
-            TARGET_SAMPLE_RATE,
-            &consumer,
-            &move |level| levels.lock().unwrap().push(level),
-            None,
-            &state,
-        );
+        )
+        .unwrap();
+        sink.consume_pcm_chunk(&[5, 6]);
+        sink.publish_level(0.5);
 
-        assert!(consumer.chunks.lock().unwrap().is_empty());
-        assert!(state.last_callback_time.lock().is_none());
-        assert_eq!(state.callback_count.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            consumer.chunks.lock().unwrap().as_slice(),
+            &[vec![1, 2, 3, 4], vec![5, 6]]
+        );
+        let levels = levels.lock().unwrap();
+        assert_eq!(levels.len(), 2);
+        assert!(levels[0] > 0.0);
+        assert_eq!(levels[1], 0.5);
+    }
+
+    #[test]
+    fn discarded_staged_sink_never_forwards_pcm() {
+        let sink = CaptureSink::new(32);
+        let consumer = Arc::new(RecordingConsumer::default());
+        sink.consume_pcm_chunk(&[1, 2]);
+        sink.discard();
+        assert!(sink
+            .promote(consumer as Arc<dyn AudioConsumer>, Arc::new(|_| {}), None)
+            .is_err());
+        sink.consume_pcm_chunk(&[3, 4]);
+        let is_discarded = matches!(&*sink.state.lock(), CaptureSinkState::Discarded);
+        assert!(is_discarded);
+    }
+
+    #[test]
+    fn warm_sink_captures_bounded_preroll_and_post_press_audio_in_order() {
+        let sink = WarmCaptureSink::new(8);
+        sink.consume_pcm_chunk(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        sink.arm(17).unwrap();
+        sink.consume_pcm_chunk(&[9, 10]);
+        sink.publish_level(0.75);
+
+        let levels = Arc::new(StdMutex::new(Vec::new()));
+        let levels_for_handler = Arc::clone(&levels);
+        let consumer = Arc::new(RecordingConsumer::default());
+        sink.promote(
+            17,
+            consumer.clone(),
+            Arc::new(move |level| levels_for_handler.lock().unwrap().push(level)),
+            None,
+        )
+        .unwrap();
+        sink.consume_pcm_chunk(&[11, 12]);
+        sink.publish_level(0.5);
+
+        assert_eq!(
+            consumer.chunks.lock().unwrap().as_slice(),
+            &[vec![3, 4, 5, 6, 7, 8, 9, 10], vec![11, 12]]
+        );
+        assert_eq!(levels.lock().unwrap().as_slice(), &[0.75, 0.5]);
+    }
+
+    #[test]
+    fn warm_sink_preserves_earliest_post_press_audio_after_preroll_eviction() {
+        let sink = WarmCaptureSink::new(8);
+        sink.consume_pcm_chunk(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        sink.arm(17).unwrap();
+        sink.consume_pcm_chunk(&[9, 10, 11, 12, 13, 14, 15, 16]);
+        sink.consume_pcm_chunk(&[17, 18, 19, 20, 21, 22]);
+
+        let consumer = Arc::new(RecordingConsumer::default());
+        sink.promote(17, consumer.clone(), Arc::new(|_| {}), None)
+            .unwrap();
+
+        assert_eq!(
+            consumer.chunks.lock().unwrap().as_slice(),
+            &[vec![9, 10, 11, 12, 13, 14, 15, 16]]
+        );
+    }
+
+    #[test]
+    fn warm_sink_discard_removes_only_matching_generation() {
+        let sink = WarmCaptureSink::new(16);
+        sink.consume_pcm_chunk(&[1, 2]);
+        sink.arm(17).unwrap();
+        sink.arm(18).unwrap();
+        sink.discard(17);
+        sink.consume_pcm_chunk(&[3, 4]);
+
+        let first = Arc::new(RecordingConsumer::default());
+        let second = Arc::new(RecordingConsumer::default());
+        sink.promote(18, second.clone(), Arc::new(|_| {}), None)
+            .unwrap();
+        sink.consume_pcm_chunk(&[5, 6]);
+
+        assert!(first.chunks.lock().unwrap().is_empty());
+        assert_eq!(
+            second.chunks.lock().unwrap().as_slice(),
+            &[vec![1, 2, 3, 4], vec![5, 6]]
+        );
+        assert!(sink.promote(17, first, Arc::new(|_| {}), None).is_err());
+    }
+
+    fn complete_hub_operation(operation: impl FnOnce() + Send + 'static) {
+        let (finished, completion) = std::sync::mpsc::sync_channel(1);
+        let worker = thread::spawn(move || {
+            operation();
+            finished.send(()).unwrap();
+        });
+        completion
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("capture lifecycle operation did not finish");
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn cold_capture_applies_deferred_configuration_without_deadlock() {
+        let hub = WarmCaptureHub::new();
+        hub.begin_cold_capture().unwrap();
+        hub.configure(false, Some("next microphone".into()));
+        assert!(hub.pending_configuration.lock().is_some());
+        assert!(hub.device_name.lock().is_none());
+
+        let worker_hub = Arc::clone(&hub);
+        complete_hub_operation(move || worker_hub.end_cold_capture());
+        assert!(hub.pending_configuration.lock().is_none());
+        assert!(!hub.enabled.load(Ordering::Acquire));
+        assert_eq!(hub.device_name.lock().as_deref(), Some("next microphone"));
+        // Applying the deferred change must leave the next capture admissible.
+        hub.begin_cold_capture().unwrap();
+        hub.end_cold_capture();
+        assert!(hub.pending_configuration.lock().is_none());
+    }
+
+    #[test]
+    fn last_warm_capture_applies_deferred_configuration_without_deadlock() {
+        for claim_count in [1, 2] {
+            let hub = WarmCaptureHub::new();
+            hub.enabled.store(true, Ordering::Release);
+            for press_id in 1..=claim_count {
+                hub.sink.arm(press_id).unwrap();
+                hub.sink
+                    .promote(
+                        press_id,
+                        Arc::new(RecordingConsumer::default()),
+                        Arc::new(|_| {}),
+                        None,
+                    )
+                    .unwrap();
+            }
+            hub.configure(false, Some("next microphone".into()));
+            if claim_count == 2 {
+                hub.release_claim(1);
+                assert!(hub.enabled.load(Ordering::Acquire));
+                assert!(hub.pending_configuration.lock().is_some());
+                assert!(hub.device_name.lock().is_none());
+            }
+
+            let worker_hub = Arc::clone(&hub);
+            complete_hub_operation(move || worker_hub.release_claim(claim_count));
+            assert!(hub.pending_configuration.lock().is_none());
+            assert!(!hub.enabled.load(Ordering::Acquire));
+            assert_eq!(hub.device_name.lock().as_deref(), Some("next microphone"));
+            assert!(!hub.sink.has_claims());
+            hub.release_claim(claim_count);
+            hub.begin_cold_capture().unwrap();
+            hub.end_cold_capture();
+            assert!(hub.pending_configuration.lock().is_none());
+        }
     }
 }
