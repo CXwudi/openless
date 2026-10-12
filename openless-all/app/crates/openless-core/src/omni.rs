@@ -13,6 +13,7 @@
 mod gemini_transcribe;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use base64::Engine;
 use serde_json::{json, Value};
@@ -345,6 +346,14 @@ pub enum OmniProvider {
 
 impl OmniProvider {
     pub fn new(config: OmniConfig) -> Self {
+        Self::with_task_spawner(config, Arc::new(crate::config::TokioTaskSpawner))
+    }
+
+    /// Use the host scheduler for both transcription work and asynchronous cleanup.
+    pub fn with_task_spawner(
+        config: OmniConfig,
+        task_spawner: Arc<dyn crate::config::TaskSpawner>,
+    ) -> Self {
         if config.is_gemini() {
             let label = OmniCallLabel {
                 provider: config.provider_id.clone(),
@@ -355,7 +364,10 @@ impl OmniProvider {
                 crate::asr::gemini::DEFAULT_MODEL | crate::asr::gemini_live::MODEL
             ) {
                 return Self::GeminiTranscribe {
-                    provider: gemini_transcribe::GeminiTranscribeOmni::new(config),
+                    provider: gemini_transcribe::GeminiTranscribeOmni::with_task_spawner(
+                        config,
+                        task_spawner,
+                    ),
                     label,
                 };
             }

@@ -1211,6 +1211,7 @@ impl LessComputerVoiceSession {
             .expect("voice resource lock poisoned")
             .clone();
         let task_spawner = Arc::clone(&control.task_spawner);
+        let omni_task_spawner = Arc::clone(&task_spawner);
         if let Some(feedback) = control
             .feedback
             .lock()
@@ -1293,6 +1294,7 @@ impl LessComputerVoiceSession {
                             omni.context.as_ref(),
                             &wav,
                             &omni.system_prompt,
+                            omni_task_spawner,
                         )
                         .await
                         {
@@ -1478,6 +1480,7 @@ impl VoiceTranscriptionSession {
         let partials = Arc::clone(&self.partials);
         let lifecycle = Arc::clone(&self.lifecycle);
         let resources = lifecycle.resources();
+        let omni_task_spawner = Arc::clone(&self.task_spawner);
         own_voice_effect(
             &self.task_spawner,
             Box::pin(async move {
@@ -1502,6 +1505,7 @@ impl VoiceTranscriptionSession {
                                 omni.context.as_ref(),
                                 &wav,
                                 &omni.system_prompt,
+                                omni_task_spawner,
                             )
                             .await?
                         }

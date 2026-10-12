@@ -117,8 +117,7 @@ async fn redirect_is_not_followed_or_allowed_to_expose_credentials() {
     let error = timeout(TEST_TIMEOUT, transport::connect(&config(&endpoint)))
         .await
         .unwrap()
-        .err()
-        .expect("credential-bearing upgrade followed a redirect")
+        .expect_err("credential-bearing upgrade followed a redirect")
         .to_string();
     assert!(error.contains("307"));
     assert!(!error.contains(API_KEY));

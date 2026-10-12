@@ -1678,6 +1678,15 @@ async fn build_omni_provider(
     credentials: &dyn CredentialStore,
     context: &DictationContext,
 ) -> Result<crate::omni::OmniProvider, BackendError> {
+    build_omni_provider_with_task_spawner(credentials, context, Arc::new(TokioTaskSpawner)).await
+}
+
+/// Audio entry points pass the host scheduler through to worker and drop cleanup.
+async fn build_omni_provider_with_task_spawner(
+    credentials: &dyn CredentialStore,
+    context: &DictationContext,
+    task_spawner: Arc<dyn TaskSpawner>,
+) -> Result<crate::omni::OmniProvider, BackendError> {
     let provider_id = context.omni.provider_id.trim();
     let provider_type = context.omni.provider_type.trim();
     if provider_id.is_empty() || provider_type.is_empty() {
@@ -1767,7 +1776,7 @@ async fn build_omni_provider(
         ),
         thinking_enabled: context.polish.llm_thinking_enabled,
     };
-    let provider = crate::omni::OmniProvider::new(config)
+    let provider = crate::omni::OmniProvider::with_task_spawner(config, task_spawner)
         .with_transcription_hints(&context.polish.working_languages, &context.polish.hotwords);
     validate_omni_context(&provider, context)?;
     Ok(provider)
@@ -1793,8 +1802,11 @@ fn validate_omni_context(
 pub async fn validate_shared_omni_provider(
     credentials: Arc<dyn CredentialStore>,
     context: Arc<DictationContext>,
+    task_spawner: Arc<dyn TaskSpawner>,
 ) -> Result<(), BackendError> {
-    let provider = build_omni_provider(credentials.as_ref(), context.as_ref()).await?;
+    let provider =
+        build_omni_provider_with_task_spawner(credentials.as_ref(), context.as_ref(), task_spawner)
+            .await?;
     if provider.is_transcription_only() {
         let wav = crate::asr::wav::encode_wav_16k_mono(&vec![0; 8_000]);
         provider
@@ -1831,8 +1843,10 @@ pub(crate) async fn complete_omni_instruction_from_wav(
     context: &DictationContext,
     wav_bytes: &[u8],
     system_prompt: &str,
+    task_spawner: Arc<dyn TaskSpawner>,
 ) -> Result<String, BackendError> {
-    let provider = build_omni_provider(credentials, context).await?;
+    let provider =
+        build_omni_provider_with_task_spawner(credentials, context, task_spawner).await?;
     let result = provider
         .complete(system_prompt, "", Some(wav_bytes))
         .await
@@ -1854,15 +1868,26 @@ fn map_omni_error(error: impl std::fmt::Display) -> BackendError {
 pub struct SharedOmniDictationEngine {
     credentials: Arc<dyn CredentialStore>,
     recorder: Arc<dyn AudioRecorder>,
+    task_spawner: Arc<dyn TaskSpawner>,
     sessions: Arc<Mutex<HashMap<SessionId, Arc<OmniSession>>>>,
     pending_captures: Arc<Mutex<HashMap<SessionId, Box<dyn PendingAudioCapture>>>>,
 }
 
 impl SharedOmniDictationEngine {
     pub fn new(credentials: Arc<dyn CredentialStore>, recorder: Arc<dyn AudioRecorder>) -> Self {
+        Self::with_task_spawner(credentials, recorder, Arc::new(TokioTaskSpawner))
+    }
+
+    /// Reuse the host runtime for transcription tasks, including cleanup after caller drop.
+    pub fn with_task_spawner(
+        credentials: Arc<dyn CredentialStore>,
+        recorder: Arc<dyn AudioRecorder>,
+        task_spawner: Arc<dyn TaskSpawner>,
+    ) -> Self {
         Self {
             credentials,
             recorder,
+            task_spawner,
             sessions: Arc::new(Mutex::new(HashMap::new())),
             pending_captures: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -2030,6 +2055,7 @@ impl DictationEngine for SharedOmniDictationEngine {
         let credentials = Arc::clone(&self.credentials);
         let sessions = Arc::clone(&self.sessions);
         let pending_captures = Arc::clone(&self.pending_captures);
+        let task_spawner = Arc::clone(&self.task_spawner);
         Box::pin(async move {
             let mut capture = Some(capture);
             let duplicate_pending = {
@@ -2053,7 +2079,13 @@ impl DictationEngine for SharedOmniDictationEngine {
                     "Omni provisional capture already exists",
                 ));
             }
-            let provider = match build_omni_provider(credentials.as_ref(), &context).await {
+            let provider = match build_omni_provider_with_task_spawner(
+                credentials.as_ref(),
+                &context,
+                task_spawner,
+            )
+            .await
+            {
                 Ok(provider) => Arc::new(provider),
                 Err(error) => {
                     let pending_capture = pending_captures.lock().remove(&session_id);
@@ -2156,8 +2188,12 @@ impl DictationEngine for SharedOmniDictationEngine {
         let credentials = Arc::clone(&self.credentials);
         let recorder = Arc::clone(&self.recorder);
         let sessions = Arc::clone(&self.sessions);
+        let task_spawner = Arc::clone(&self.task_spawner);
         Box::pin(async move {
-            let provider = Arc::new(build_omni_provider(credentials.as_ref(), &context).await?);
+            let provider = Arc::new(
+                build_omni_provider_with_task_spawner(credentials.as_ref(), &context, task_spawner)
+                    .await?,
+            );
             let pcm = Arc::new(OmniPcm::default());
             let cancellation = Arc::new(ProviderCancellation::default());
             let session = Arc::new(OmniSession {

@@ -6,7 +6,7 @@ use std::time::Duration;
 use super::OmniConfig;
 use crate::asr::gemini::{CancelOnDrop, GeminiBatchASR, TranscriptionMode};
 use crate::asr::gemini_live::{GeminiLiveASR, GeminiLiveConfig};
-use crate::config::{TaskSpawner, TokioTaskSpawner};
+use crate::config::TaskSpawner;
 use crate::polish::LLMError;
 use crate::ports::{AudioConsumer, TextStreamChunk, TextStreamSink};
 
@@ -19,10 +19,6 @@ pub struct GeminiTranscribeOmni {
 }
 
 impl GeminiTranscribeOmni {
-    pub fn new(config: OmniConfig) -> Self {
-        Self::with_task_spawner(config, Arc::new(TokioTaskSpawner))
-    }
-
     pub(crate) fn with_task_spawner(
         config: OmniConfig,
         task_spawner: Arc<dyn TaskSpawner>,
