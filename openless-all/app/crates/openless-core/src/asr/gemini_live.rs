@@ -276,7 +276,15 @@ impl GeminiLiveASR {
                     _ = shutdown.notified() => break,
                     message = read.next() => message,
                 };
-                let Some(message) = message else { break };
+                let Some(message) = message else {
+                    if let Some(this) = weak_self.upgrade() {
+                        this.fail_session_start("WebSocket closed before setup completed");
+                        this.finish_with_partial_or_error(GeminiLiveASRError::ConnectionFailed(
+                            "WebSocket closed".into(),
+                        ));
+                    }
+                    break;
+                };
                 let Some(this) = weak_self.upgrade() else {
                     break;
                 };
@@ -473,6 +481,9 @@ impl GeminiLiveASR {
         {
             let (should_finish, has_final) = {
                 let mut state = self.state.lock();
+                if !state.audio_stream_end_sent {
+                    return true;
+                }
                 state.turn_complete_received = true;
                 (
                     state.ending && state.audio_stream_end_written,
@@ -868,6 +879,26 @@ mod tests {
             "a+b&c"
         );
         assert_eq!(pairs.iter().find(|(key, _)| key == "x").unwrap().1, "1");
+    }
+
+    #[test]
+    fn turn_complete_before_audio_stream_end_is_ignored() {
+        let provider = GeminiLiveASR::new(GeminiLiveCredentials {
+            api_key: "test-key".into(),
+            endpoint: "ws://localhost/live".into(),
+            model: DEFAULT_MODEL.into(),
+            language_codes: Vec::new(),
+            custom_vocabulary: Vec::new(),
+            mode: GeminiLiveMode::Verbatim,
+        });
+        let message = r#"{"serverContent":{"turnComplete":true}}"#;
+
+        assert!(provider.handle_server_message(message));
+        assert!(!provider.state.lock().turn_complete_received);
+
+        provider.state.lock().audio_stream_end_sent = true;
+        assert!(provider.handle_server_message(message));
+        assert!(provider.state.lock().turn_complete_received);
     }
 
     #[tokio::test]

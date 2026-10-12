@@ -307,7 +307,7 @@ impl TranscriptionSession for CloudTranscriptionSession {
                     provider.transcribe().await.map_err(map_asr_error)?
                 }
                 CloudTranscriptionSessionKind::GeminiLive(provider) => {
-                    provider.send_last_frame().await.map_err(map_asr_error)?;
+                    let _ = provider.send_last_frame().await;
                     timeout_transcription(Duration::from_secs(120), provider.await_final_result())
                         .await?
                 }
