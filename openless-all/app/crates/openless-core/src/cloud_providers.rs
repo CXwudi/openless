@@ -170,12 +170,17 @@ impl PreparedTranscription for PreparedCloudTranscription {
         let preparation = self.preparation.clone();
         let task_spawner = Arc::clone(&self.task_spawner);
         Box::pin(async move {
-            let (kind, asr_call_label) =
-                build_cloud_transcription_session(&preparation, task_spawner, partials).await?;
+            let (kind, asr_call_label) = build_cloud_transcription_session(
+                &preparation,
+                Arc::clone(&task_spawner),
+                partials,
+            )
+            .await?;
             Ok(Arc::new(CloudTranscriptionSession {
                 kind,
                 asr_call_label,
                 finished: AtomicBool::new(false),
+                task_spawner,
             }) as Arc<dyn TranscriptionSession>)
         })
     }
@@ -200,6 +205,7 @@ struct CloudTranscriptionSession {
     kind: CloudTranscriptionSessionKind,
     asr_call_label: crate::AsrCallLabel,
     finished: AtomicBool,
+    task_spawner: Arc<dyn TaskSpawner>,
 }
 
 impl TranscriptionEngine for SharedCloudTranscriptionEngine {
@@ -272,6 +278,7 @@ impl TranscriptionSession for CloudTranscriptionSession {
             });
         }
         let kind = self.kind.clone();
+        let task_spawner = Arc::clone(&self.task_spawner);
         Box::pin(async move {
             let transcript = match kind {
                 CloudTranscriptionSessionKind::Volcengine(provider) => {
@@ -300,7 +307,26 @@ impl TranscriptionSession for CloudTranscriptionSession {
                     timeout_transcription(timeout, provider.transcribe()).await?
                 }
                 CloudTranscriptionSessionKind::Gemini(provider) => {
-                    provider.transcribe().await.map_err(map_asr_error)?
+                    let worker = Arc::clone(&provider);
+                    let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
+                    task_spawner.spawn(Box::pin(async move {
+                        let _ = result_sender.send(worker.transcribe().await);
+                    }));
+                    // Verify may drop finish on cancellation; the worker still owns file cleanup.
+                    let mut cleanup = crate::asr::gemini::CancelOnDrop {
+                        provider: Some(provider),
+                        task_spawner,
+                    };
+                    let result = result_receiver.await;
+                    cleanup.provider = None;
+                    result
+                        .map_err(|_| {
+                            BackendError::new(
+                                BackendErrorCode::Internal,
+                                "Gemini transcription task failed",
+                            )
+                        })?
+                        .map_err(map_asr_error)?
                 }
                 CloudTranscriptionSessionKind::Bailian(provider) => {
                     let _ = provider.send_last_frame().await;

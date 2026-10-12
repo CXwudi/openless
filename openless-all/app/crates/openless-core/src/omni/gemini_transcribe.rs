@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::OmniConfig;
-use crate::asr::gemini::{GeminiBatchASR, TranscriptionMode};
+use crate::asr::gemini::{CancelOnDrop, GeminiBatchASR, TranscriptionMode};
 use crate::config::{TaskSpawner, TokioTaskSpawner};
 use crate::polish::LLMError;
 
@@ -148,19 +148,4 @@ fn extract_http_status(message: &str) -> Option<u16> {
             .ok()
             .filter(|status| (100..600).contains(status))
     })
-}
-
-/// Cancels the detached worker if its caller stops awaiting the result.
-struct CancelOnDrop {
-    provider: Option<Arc<GeminiBatchASR>>,
-    task_spawner: Arc<dyn TaskSpawner>,
-}
-
-impl Drop for CancelOnDrop {
-    fn drop(&mut self) {
-        if let Some(provider) = self.provider.take() {
-            self.task_spawner
-                .spawn(Box::pin(async move { provider.cancel().await }));
-        }
-    }
 }

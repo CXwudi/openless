@@ -9,6 +9,7 @@ use futures_util::StreamExt;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::asr::wav::encode_wav_16k_mono;
@@ -48,6 +49,21 @@ pub struct GeminiBatchASR {
     buffer: Mutex<Vec<u8>>,
     active_interaction: Mutex<Option<String>>,
     cancelled: AtomicBool,
+}
+
+/// Cancels a detached transcription worker if its caller stops awaiting the result.
+pub(crate) struct CancelOnDrop {
+    pub(crate) provider: Option<Arc<GeminiBatchASR>>,
+    pub(crate) task_spawner: Arc<dyn crate::config::TaskSpawner>,
+}
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        if let Some(provider) = self.provider.take() {
+            self.task_spawner
+                .spawn(Box::pin(async move { provider.cancel().await }));
+        }
+    }
 }
 
 impl GeminiBatchASR {

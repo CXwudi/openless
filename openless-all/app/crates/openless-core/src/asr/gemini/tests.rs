@@ -6,6 +6,7 @@ use crate::credentials::{
 };
 use crate::ports::AudioConsumer;
 use crate::{ProviderApi, ProviderKind, ProviderRequest, ProviderService, TokioTaskSpawner};
+use crate::{SharedCloudTranscriptionEngine, TranscriptionEngine};
 use base64::Engine;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -13,6 +14,14 @@ use std::sync::Arc;
 use std::thread;
 
 mod omni;
+
+struct UnexpectedTextStream;
+
+impl crate::TextStreamSink for UnexpectedTextStream {
+    fn publish(&self, _: crate::TextStreamChunk) -> Result<(), crate::BackendError> {
+        panic!("cancelled batch transcription must not deliver text")
+    }
+}
 
 #[test]
 fn builds_files_and_interaction_urls() {
@@ -171,6 +180,18 @@ async fn failed_or_malformed_interaction_never_validates_as_silence() {
 }
 
 async fn validation_service(endpoint: &str) -> (ProviderService, ProviderRequest) {
+    let (credentials, channel) = asr_credentials(endpoint).await;
+    (
+        ProviderService::new(credentials, Arc::new(TokioTaskSpawner)),
+        ProviderRequest {
+            kind: ProviderKind::Asr,
+            channel_id: Some(channel),
+            thinking_enabled: false,
+        },
+    )
+}
+
+async fn asr_credentials(endpoint: &str) -> (Arc<InMemoryCredentialStore>, String) {
     let credentials = Arc::new(InMemoryCredentialStore::default());
     let ChannelMutationResult::Created(channel) = credentials
         .mutate_channel(ChannelMutation::Create {
@@ -197,14 +218,7 @@ async fn validation_service(endpoint: &str) -> (ProviderService, ProviderRequest
             .await
             .unwrap();
     }
-    (
-        ProviderService::new(credentials, Arc::new(TokioTaskSpawner)),
-        ProviderRequest {
-            kind: ProviderKind::Asr,
-            channel_id: Some(channel),
-            thinking_enabled: false,
-        },
-    )
+    (credentials, channel)
 }
 
 /// Record the upload, transcription and cleanup contract at the HTTP boundary.
@@ -240,40 +254,9 @@ fn transcription_server_with_poll(
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
     let server = thread::spawn(move || {
-        let mut request = accept_request(&listener);
-        assert!(request.0.starts_with("POST /upload/v1beta/files HTTP/1.1"));
-        assert!(request
-            .0
-            .to_ascii_lowercase()
-            .contains("x-goog-api-key: key"));
-        assert!(request
-            .0
-            .to_ascii_lowercase()
-            .contains("x-goog-upload-command: start"));
-        assert!(String::from_utf8_lossy(&request.1).contains("openless-dictation.wav"));
+        let mut upload = accept_upload(&listener);
         write_response(
-            &mut request.2,
-            "200 OK",
-            &[(
-                "X-Goog-Upload-URL",
-                &format!("http://{address}/upload-session"),
-            )],
-            "",
-        );
-
-        request = accept_request(&listener);
-        assert!(request.0.starts_with("POST /upload-session HTTP/1.1"));
-        assert!(request
-            .0
-            .to_ascii_lowercase()
-            .contains("x-goog-upload-command: upload, finalize"));
-        assert!(request
-            .0
-            .to_ascii_lowercase()
-            .contains("x-goog-upload-offset: 0"));
-        assert!(request.1.starts_with(b"RIFF"));
-        write_response(
-            &mut request.2,
+            &mut upload,
             "200 OK",
             &[],
             &format!(
@@ -281,7 +264,7 @@ fn transcription_server_with_poll(
             ),
         );
 
-        request = accept_request(&listener);
+        let mut request = accept_request(&listener);
         assert!(request.0.starts_with("GET /v1beta/files/file-1 HTTP/1.1"));
         write_response(
             &mut request.2,
@@ -334,6 +317,146 @@ fn transcription_server_with_poll(
     });
 
     (format!("http://{address}/v1beta/interactions/"), server)
+}
+
+fn accept_upload(listener: &TcpListener) -> TcpStream {
+    let mut request = accept_request(listener);
+    assert!(request.0.starts_with("POST /upload/v1beta/files HTTP/1.1"));
+    assert!(request
+        .0
+        .to_ascii_lowercase()
+        .contains("x-goog-api-key: key"));
+    assert!(request
+        .0
+        .to_ascii_lowercase()
+        .contains("x-goog-upload-command: start"));
+    assert!(String::from_utf8_lossy(&request.1).contains("openless-dictation.wav"));
+    write_response(
+        &mut request.2,
+        "200 OK",
+        &[(
+            "X-Goog-Upload-URL",
+            &format!("http://{}/upload-session", listener.local_addr().unwrap()),
+        )],
+        "",
+    );
+    request = accept_request(listener);
+    assert!(request.0.starts_with("POST /upload-session HTTP/1.1"));
+    assert!(request
+        .0
+        .to_ascii_lowercase()
+        .contains("x-goog-upload-command: upload, finalize"));
+    assert!(request
+        .0
+        .to_ascii_lowercase()
+        .contains("x-goog-upload-offset: 0"));
+    assert!(request.1.starts_with(b"RIFF"));
+    request.2
+}
+
+#[tokio::test]
+async fn cancelled_asr_verification_cancels_once_and_deletes_audio() {
+    let (ready, received) = tokio::sync::oneshot::channel();
+    let (endpoint, server) = transcription_server_with_poll(
+        "200 OK",
+        r#"{"id":"i-1","status":"in_progress"}"#,
+        |_| {},
+        move || ready.send(()).unwrap(),
+    );
+    let (service, request) = validation_service(&endpoint).await;
+    let cancellation = crate::provider_transport::ProviderCancellation::new();
+    let worker_cancellation = cancellation.clone();
+    let task = tokio::spawn(async move {
+        service
+            .validate_with_cancellation(request, worker_cancellation)
+            .await
+    });
+    received.await.unwrap();
+    cancellation.cancel();
+    assert_eq!(
+        task.await.unwrap().unwrap_err().code,
+        crate::BackendErrorCode::Cancelled
+    );
+    tokio::task::spawn_blocking(move || server.join().unwrap())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn dropped_asr_finish_cancels_once_and_deletes_audio() {
+    let (ready, received) = tokio::sync::oneshot::channel();
+    let (endpoint, server) = transcription_server_with_poll(
+        "200 OK",
+        r#"{"id":"i-1","status":"in_progress"}"#,
+        |_| {},
+        move || ready.send(()).unwrap(),
+    );
+    let (credentials, channel) = asr_credentials(&endpoint).await;
+    let engine = SharedCloudTranscriptionEngine::new(credentials);
+    let mut context = crate::DictationContext::default();
+    context.asr = crate::ProviderInvocation::for_provider(&channel);
+    context.asr.provider_type = PROVIDER_ID.into();
+    let session = engine
+        .start(
+            crate::SessionId::new(),
+            Arc::new(context),
+            Arc::new(UnexpectedTextStream),
+        )
+        .await
+        .unwrap();
+    session.consume_pcm_chunk(&vec![0; 16_000]);
+    let task = tokio::spawn(session.finish());
+    received.await.unwrap();
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    tokio::task::spawn_blocking(move || server.join().unwrap())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn cancelled_asr_upload_deletes_file_without_creating_interaction() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let (ready, received) = tokio::sync::oneshot::channel();
+    let (release, released) = std::sync::mpsc::sync_channel(1);
+    let server = thread::spawn(move || {
+        let mut upload = accept_upload(&listener);
+        ready.send(()).unwrap();
+        released.recv_timeout(Duration::from_secs(5)).unwrap();
+        write_response(
+            &mut upload,
+            "200 OK",
+            &[],
+            &format!(
+                r#"{{"file":{{"name":"files/file-1","uri":"http://{address}/v1beta/files/file-1"}}}}"#
+            ),
+        );
+        let mut cleanup = accept_request(&listener);
+        assert!(cleanup
+            .0
+            .starts_with("DELETE /v1beta/files/file-1 HTTP/1.1"));
+        write_response(&mut cleanup.2, "200 OK", &[], "");
+    });
+    let (service, request) = validation_service(&format!("http://{address}/v1beta")).await;
+    let cancellation = crate::provider_transport::ProviderCancellation::new();
+    let worker_cancellation = cancellation.clone();
+    let task = tokio::spawn(async move {
+        service
+            .validate_with_cancellation(request, worker_cancellation)
+            .await
+    });
+    received.await.unwrap();
+    cancellation.cancel();
+    assert_eq!(
+        task.await.unwrap().unwrap_err().code,
+        crate::BackendErrorCode::Cancelled
+    );
+    release.send(()).unwrap();
+    tokio::task::spawn_blocking(move || server.join().unwrap())
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
