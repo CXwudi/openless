@@ -259,16 +259,16 @@ async fn smart_stream_never_delivers_text_after_cancellation() {
         .unwrap();
 }
 
-/// A host scheduler remains usable when the caller is dropped outside a Tokio thread.
+/// Queue work for the host runtime even when called from a foreign thread.
 struct HostSpawner {
-    handle: tokio::runtime::Handle,
+    tasks: tokio::sync::mpsc::UnboundedSender<futures_util::future::BoxFuture<'static, ()>>,
     spawned: std::sync::atomic::AtomicUsize,
 }
 
 impl crate::TaskSpawner for HostSpawner {
     fn spawn(&self, task: futures_util::future::BoxFuture<'static, ()>) {
         self.spawned.fetch_add(1, Ordering::AcqRel);
-        self.handle.spawn(task);
+        assert!(self.tasks.send(task).is_ok(), "host scheduler stopped");
     }
 }
 
@@ -283,8 +283,14 @@ async fn smart_audio_entrypoints_keep_host_scheduler_on_foreign_thread_drop() {
             move || ready.send(()).unwrap(),
         );
         let credentials = omni_credentials(&endpoint).await;
+        let (tasks, mut queued) = tokio::sync::mpsc::unbounded_channel();
+        let dispatcher = tokio::spawn(async move {
+            while let Some(task) = queued.recv().await {
+                tokio::spawn(task);
+            }
+        });
         let spawner = Arc::new(HostSpawner {
-            handle: tokio::runtime::Handle::current(),
+            tasks,
             spawned: std::sync::atomic::AtomicUsize::new(0),
         });
         let progress = Arc::new(Progress::default());
@@ -329,12 +335,8 @@ async fn smart_audio_entrypoints_keep_host_scheduler_on_foreign_thread_drop() {
             _ = &mut request => panic!("transcription finished before cancellation"),
             result = received => result.unwrap(),
         }
-        thread::spawn(move || {
-            assert!(tokio::runtime::Handle::try_current().is_err());
-            drop(request);
-        })
-        .join()
-        .unwrap();
+        // A fresh OS thread has no entered Tokio runtime.
+        thread::spawn(move || drop(request)).join().unwrap();
         tokio::task::spawn_blocking(move || server.join().unwrap())
             .await
             .unwrap();
@@ -348,5 +350,7 @@ async fn smart_audio_entrypoints_keep_host_scheduler_on_foreign_thread_drop() {
             .lock()
             .iter()
             .any(|event| matches!(event, EngineProgress::PolishDelta(_))));
+        drop(spawner);
+        dispatcher.await.unwrap();
     }
 }
