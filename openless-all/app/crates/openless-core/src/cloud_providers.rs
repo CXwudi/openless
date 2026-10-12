@@ -2311,10 +2311,17 @@ impl DictationEngine for SharedOmniDictationEngine {
                 remove_omni_session(&sessions, session_id, &session);
                 return Err(EngineFailure::from(cancelled_omni_error()));
             }
-            progress
-                .publish(session_id, EngineProgress::Stage(EngineStage::Polishing))
-                .map_err(EngineFailure::from)?;
             let live = session.pcm.live.lock().clone();
+            let is_live = live.is_some();
+            // Live can revise the transcript until finalization has drained the worker.
+            let stage = if is_live {
+                EngineStage::Transcribing
+            } else {
+                EngineStage::Polishing
+            };
+            progress
+                .publish(session_id, EngineProgress::Stage(stage))
+                .map_err(EngineFailure::from)?;
             let wav = if live.is_some() {
                 Vec::new()
             } else {
@@ -2407,6 +2414,11 @@ impl DictationEngine for SharedOmniDictationEngine {
             };
             if session.cancellation.is_cancelled() {
                 return Err(EngineFailure::from(cancelled_omni_error()));
+            }
+            if is_live {
+                progress
+                    .publish(session_id, EngineProgress::Stage(EngineStage::Polishing))
+                    .map_err(EngineFailure::from)?;
             }
             if !context.recording.archive_successful_recording {
                 if let Some(archive) = archive.as_ref() {

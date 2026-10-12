@@ -12,14 +12,15 @@ use openless_core::credentials::{
     OMNI_API_KEY_ACCOUNT, OMNI_ENDPOINT_ACCOUNT, OMNI_MODEL_ACCOUNT,
 };
 use openless_core::shared_types::PipelineMode;
-use openless_core::testing::FixtureAudioRecorder;
+use openless_core::testing::{FixtureAudioRecorder, FixtureTextInserter};
 use openless_core::{
-    ActiveRecording, AudioConsumer, AudioRecorder, BackendError, BackendErrorCode, CredentialKey,
-    CredentialStore, DictationAudioSource, DictationContext, DictationEngine, EngineProgress,
-    EngineProgressSink, EngineStage, InMemoryCredentialStore, ProviderInvocation,
-    RecordingProgressSink, SecretValue, SessionId, SharedCloudTranscriptionEngine,
-    SharedOmniDictationEngine, TextStreamChunk, TextStreamSink, TranscriptDelta,
-    TranscriptionEngine,
+    ActiveRecording, AudioConsumer, AudioRecorder, BackendConfig, BackendDependencies,
+    BackendError, BackendErrorCode, BackendEventKind, CredentialKey, CredentialStore,
+    DictationAudioSource, DictationContext, DictationEngine, DictationInsertStatus, DictationPhase,
+    EngineProgress, EngineProgressSink, InMemoryCredentialStore, InsertOutcome,
+    NoopSettingsRuntime, OpenLessBackend, ProviderInvocation, RecordingProgressSink, SecretValue,
+    SessionId, SettingsUpdateOptions, SharedCloudTranscriptionEngine, SharedOmniDictationEngine,
+    TextStreamChunk, TextStreamSink, TranscriptDelta, TranscriptionEngine,
 };
 use serde_json::{json, Value};
 use tokio::net::{TcpListener, TcpStream};
@@ -225,11 +226,11 @@ impl EngineProgressSink for ProgressEvents {
 }
 
 /// Simulate a host disappearing at the transition from recording to finalization.
-struct RejectPolishing(ProgressEvents);
+struct RejectFinalization(ProgressEvents);
 
-impl EngineProgressSink for RejectPolishing {
+impl EngineProgressSink for RejectFinalization {
     fn publish(&self, session: SessionId, event: EngineProgress) -> Result<(), BackendError> {
-        if event == EngineProgress::Stage(EngineStage::Polishing) {
+        if matches!(event, EngineProgress::Stage(_)) {
             return Err(BackendError::new(
                 BackendErrorCode::Internal,
                 "test progress delivery failed",
@@ -374,6 +375,154 @@ async fn multimodal_live_previews_before_stop_and_uses_smart_final_without_a_sec
     within(server).await.unwrap();
 }
 
+/// Exercise the production phase checks, insertion, and history through both audio entrypoints.
+async fn backend_finalizes_live_segments(segments: &'static [&'static str]) {
+    for microphone in [false, true] {
+        let (listener, endpoint) = endpoint().await;
+        let server = tokio::spawn(async move {
+            let mut socket = accept_setup(&listener, "SMART").await;
+            activate(&mut socket).await;
+            preview(&mut socket).await;
+            assert_eq!(
+                receive(&mut socket).await,
+                json!({"realtimeInput": {"activityEnd": {}}})
+            );
+            // A late hypothesis and changed final must remain valid while stop drains Live.
+            if segments.len() > 1 {
+                socket
+                    .send(Message::Text(
+                        json!({"serverContent": {
+                            "interimInputTranscription": {"text": "Can we meet on Tuesday"}
+                        }})
+                        .to_string(),
+                    ))
+                    .await
+                    .unwrap();
+            }
+            for (index, text) in segments.iter().enumerate() {
+                socket
+                    .send(Message::Text(
+                        json!({"serverContent": {
+                            "inputTranscription": {"text": text},
+                            "generationComplete": index + 1 == segments.len()
+                        }})
+                        .to_string(),
+                    ))
+                    .await
+                    .unwrap();
+            }
+            assert_closed(&mut socket, &listener).await;
+        });
+        let store = credentials(&endpoint, true).await;
+        let data_dir =
+            std::env::temp_dir().join(format!("openless-live-stop-{}", SessionId::new()));
+        let backend = OpenLessBackend::new(
+            BackendConfig {
+                data_dir: data_dir.clone(),
+                ..BackendConfig::default()
+            },
+            BackendDependencies {
+                dictation_engine: Arc::new(SharedOmniDictationEngine::new(
+                    store.clone(),
+                    Arc::new(FixtureAudioRecorder::new(vec![pcm()], Vec::new())),
+                )),
+                credential_store: store,
+                text_inserter: Arc::new(FixtureTextInserter::with_outcome(InsertOutcome::Inserted)),
+                ..BackendDependencies::unsupported()
+            },
+        )
+        .unwrap();
+        let mut prefs = backend.get_preferences();
+        prefs.multimodal_pipeline_enabled = true;
+        prefs.pipeline_mode = PipelineMode::Multimodal;
+        prefs.active_omni_provider = "gemini".to_owned();
+        prefs.working_languages = vec!["en".to_owned()];
+        prefs.stable_transcription_enabled = false;
+        backend
+            .update_settings(prefs, SettingsUpdateOptions::STRICT, &NoopSettingsRuntime)
+            .unwrap();
+        backend.add_vocabulary("OpenLess".to_owned(), None).unwrap();
+        backend.start().await.unwrap();
+        let mut events = backend.subscribe();
+        let session = within(async {
+            if microphone {
+                backend.start_dictation().await
+            } else {
+                backend.start_external_dictation().await
+            }
+        })
+        .await
+        .unwrap();
+        if !microphone {
+            backend.feed_external_pcm(session, &pcm()).unwrap();
+        }
+        within(async {
+            loop {
+                if let BackendEventKind::TranscriptDelta(delta) = events.recv().await.unwrap().kind
+                {
+                    if delta.text == DRAFT_TWO {
+                        break;
+                    }
+                }
+            }
+        })
+        .await;
+        let result = within(backend.stop_dictation_session(session))
+            .await
+            .unwrap();
+        let expected = segments.join(" ");
+        assert_eq!(result.raw_text, expected);
+        assert_eq!(result.polished_text, expected);
+        assert_eq!(result.inserted, DictationInsertStatus::Inserted);
+        let mut polishing = false;
+        let mut last_transcript = String::new();
+        let mut finals = 0;
+        let mut completed = false;
+        while let Ok(event) = events.try_recv() {
+            match event.kind {
+                BackendEventKind::TranscriptDelta(delta) => {
+                    assert!(!polishing, "Live previews must finish before Polishing");
+                    last_transcript = delta.text;
+                }
+                BackendEventKind::DictationStateChanged(state)
+                    if state.phase == DictationPhase::Polishing =>
+                {
+                    polishing = true;
+                }
+                BackendEventKind::PolishDelta(delta) => {
+                    assert!(polishing);
+                    assert!(delta.is_final);
+                    assert_eq!(delta.text, expected);
+                    finals += 1;
+                }
+                BackendEventKind::DictationCompleted(_) => completed = true,
+                _ => {}
+            }
+        }
+        assert_eq!(last_transcript, expected);
+        assert_eq!(finals, 1);
+        assert!(completed);
+        let history = backend.list_history().unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].raw_transcript, expected);
+        assert_eq!(history[0].final_text, expected);
+        assert!(history[0].error_code.is_none());
+        within(server).await.unwrap();
+        backend.shutdown().await.unwrap();
+        std::fs::remove_dir_all(data_dir).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn multimodal_backend_accepts_revised_final_after_stop() {
+    backend_finalizes_live_segments(&[SMART]).await;
+}
+
+#[tokio::test]
+async fn multimodal_backend_preserves_multiple_final_segments_after_stop() {
+    backend_finalizes_live_segments(&["Can we meet on Tuesday?", "Wednesday works better."]).await;
+}
+
 #[tokio::test]
 async fn multimodal_stable_mode_connects_after_stop_and_replays_pcm_for_smart_transcription() {
     let (listener, endpoint) = endpoint().await;
@@ -508,7 +657,7 @@ async fn multimodal_progress_failure_closes_live_connection_and_removes_the_sess
         Arc::new(FixtureAudioRecorder::default()),
     );
     let (sender, mut events) = mpsc::unbounded_channel();
-    let progress = Arc::new(RejectPolishing(ProgressEvents(sender)));
+    let progress = Arc::new(RejectFinalization(ProgressEvents(sender)));
     let session = SessionId::new();
     within(engine.start(session, context(true), progress.clone()))
         .await
