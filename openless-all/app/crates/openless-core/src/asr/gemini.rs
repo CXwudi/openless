@@ -200,7 +200,7 @@ impl GeminiBatchASR {
             .to_owned();
         validate_upload_url(&url, &upload_url)?;
 
-        let response = client
+        let response = match client
             .post(&upload_url)
             .header("x-goog-api-key", self.api_key.trim())
             .header("X-Goog-Upload-Offset", "0")
@@ -210,30 +210,71 @@ impl GeminiBatchASR {
             .timeout(remaining_timeout(deadline, UPLOAD_TIMEOUT)?)
             .send()
             .await
-            .context("Gemini Files API audio upload failed")?;
+        {
+            Ok(response) => response,
+            Err(error) => {
+                self.cancel_upload_session(&upload_url).await;
+                return Err(error).context("Gemini Files API audio upload failed");
+            }
+        };
         let status = response.status();
-        let body = read_response_limited(response)
-            .await
-            .context("read Gemini Files API response")?;
+        let body = match read_response_limited(response).await {
+            Ok(body) => body,
+            Err(error) => {
+                self.cancel_upload_session(&upload_url).await;
+                return Err(error).context("read Gemini Files API response");
+            }
+        };
         if !status.is_success() {
+            self.cancel_upload_session(&upload_url).await;
             anyhow::bail!("Gemini Files API upload failed (HTTP {status})");
         }
         let json: Value =
-            serde_json::from_slice(&body).context("parse Gemini Files API response")?;
-        let uri = json
+            match serde_json::from_slice(&body).context("parse Gemini Files API response") {
+                Ok(json) => json,
+                Err(error) => {
+                    self.cancel_upload_session(&upload_url).await;
+                    return Err(error);
+                }
+            };
+        let uri = match json
             .pointer("/file/uri")
             .and_then(Value::as_str)
             .map(str::to_owned)
             .filter(|uri| !uri.trim().is_empty())
-            .context("Gemini Files API response missing file URI")?;
-        let name = json
+            .context("Gemini Files API response missing file URI")
+        {
+            Ok(uri) => uri,
+            Err(error) => {
+                self.cancel_upload_session(&upload_url).await;
+                return Err(error);
+            }
+        };
+        let name = match json
             .pointer("/file/name")
             .and_then(Value::as_str)
             .map(str::to_owned)
             .filter(|name| !name.trim().is_empty())
             .or_else(|| uri.rsplit('/').next().map(|id| format!("files/{id}")))
-            .context("Gemini Files API response missing file name")?;
+            .context("Gemini Files API response missing file name")
+        {
+            Ok(name) => name,
+            Err(error) => {
+                self.cancel_upload_session(&upload_url).await;
+                return Err(error);
+            }
+        };
         Ok(UploadedFile { name, uri })
+    }
+
+    async fn cancel_upload_session(&self, upload_url: &str) {
+        let _ = crate::net::credential_http_for_url(upload_url)
+            .post(upload_url)
+            .header("x-goog-api-key", self.api_key.trim())
+            .header("X-Goog-Upload-Command", "cancel")
+            .timeout(CANCEL_TIMEOUT)
+            .send()
+            .await;
     }
 
     async fn wait_for_file_ready(&self, name: &str, deadline: Instant) -> Result<()> {
