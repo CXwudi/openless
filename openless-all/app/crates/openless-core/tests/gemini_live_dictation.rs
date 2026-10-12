@@ -25,7 +25,9 @@ use openless_core::{
 use serde_json::{json, Value};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot, Notify};
-use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+use tokio_tungstenite::tungstenite::handshake::server::{
+    Callback, ErrorResponse, Request, Response,
+};
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 
 const API_KEY: &str = "gemini-engine-test-key";
@@ -104,16 +106,23 @@ async fn endpoint() -> (TcpListener, String) {
     (listener, endpoint)
 }
 
+/// Validate credentials using the handshake callback's fixed response signature.
+struct CheckCredentials;
+
+impl Callback for CheckCredentials {
+    fn on_request(self, request: &Request, response: Response) -> Result<Response, ErrorResponse> {
+        assert_eq!(request.headers()["x-goog-api-key"], API_KEY);
+        assert!(request.uri().query().is_none());
+        Ok(response)
+    }
+}
+
 /// Check the engine-selected mode and credentials before granting setup completion.
 async fn accept_setup(listener: &TcpListener, mode: &str) -> ServerSocket {
     let (stream, _) = within(listener.accept()).await.unwrap();
     let mut socket = within(tokio_tungstenite::accept_hdr_async(
         stream,
-        |request: &Request, response: Response| {
-            assert_eq!(request.headers()["x-goog-api-key"], API_KEY);
-            assert!(request.uri().query().is_none());
-            Ok(response)
-        },
+        CheckCredentials,
     ))
     .await
     .unwrap();

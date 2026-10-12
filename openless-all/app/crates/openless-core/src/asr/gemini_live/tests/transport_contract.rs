@@ -1,6 +1,28 @@
 use super::*;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+use tokio_tungstenite::tungstenite::handshake::server::{
+    Callback, ErrorResponse, Request, Response,
+};
+
+/// Inspect upgrade headers using the handshake callback's fixed response signature.
+struct CheckUpgradeRequest;
+
+impl Callback for CheckUpgradeRequest {
+    fn on_request(self, request: &Request, response: Response) -> Result<Response, ErrorResponse> {
+        let headers = request.headers();
+        assert_eq!(headers.get_all("x-goog-api-key").iter().count(), 1);
+        assert_eq!(headers["x-goog-api-key"], API_KEY);
+        assert_eq!(headers["x-gateway-route"], "transcription");
+        assert_eq!(headers.get_all("upgrade").iter().count(), 1);
+        assert_eq!(headers["upgrade"], "websocket");
+        assert_eq!(request.uri().query(), Some("project=demo"));
+        assert_eq!(
+            request.uri().path(),
+            "/gateway/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+        );
+        Ok(response)
+    }
+}
 
 #[test]
 fn normalizes_existing_api_roots_and_explicit_live_endpoints() {
@@ -60,22 +82,9 @@ async fn upgrade_uses_one_api_key_header_and_preserves_gateway_headers() {
     );
     let server = tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
-        let mut socket = tokio_tungstenite::accept_hdr_async(
-            stream,
-            |request: &Request, response: Response| {
-                let headers = request.headers();
-                assert_eq!(headers.get_all("x-goog-api-key").iter().count(), 1);
-                assert_eq!(headers["x-goog-api-key"], API_KEY);
-                assert_eq!(headers["x-gateway-route"], "transcription");
-                assert_eq!(headers.get_all("upgrade").iter().count(), 1);
-                assert_eq!(headers["upgrade"], "websocket");
-                assert_eq!(request.uri().query(), Some("project=demo"));
-                assert_eq!(request.uri().path(), "/gateway/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent");
-                Ok(response)
-            },
-        )
-        .await
-        .unwrap();
+        let mut socket = tokio_tungstenite::accept_hdr_async(stream, CheckUpgradeRequest)
+            .await
+            .unwrap();
         timeout(TEST_TIMEOUT, assert_closed(&mut socket))
             .await
             .unwrap();
