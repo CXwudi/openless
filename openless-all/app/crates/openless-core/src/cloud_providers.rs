@@ -15,10 +15,11 @@ use parking_lot::{Mutex, RwLock};
 use crate::asr::tencent_cloud::TencentCloudASRError;
 use crate::asr::{
     BailianCredentials, BailianRealtimeASR, DashScopeMultimodalASR, DictionaryHotword,
-    ElevenLabsBatchASR, GeminiBatchASR, MimoBatchASR, Qwen3RealtimeASR, Qwen3RealtimeCredentials,
-    StepfunRealtimeASR, StepfunRealtimeCredentials, TencentCloudCredentials,
-    TencentCloudStreamingASR, VolcengineCredentials, VolcengineStreamingASR, WhisperBatchASR,
-    XfyunCredentials, XfyunStreamingASR,
+    ElevenLabsBatchASR, GeminiBatchASR, GeminiLiveASR, GeminiLiveCredentials, GeminiLiveMode,
+    MimoBatchASR, Qwen3RealtimeASR, Qwen3RealtimeCredentials, StepfunRealtimeASR,
+    StepfunRealtimeCredentials, TencentCloudCredentials, TencentCloudStreamingASR,
+    VolcengineCredentials, VolcengineStreamingASR, WhisperBatchASR, XfyunCredentials,
+    XfyunStreamingASR,
 };
 use crate::config::{TaskSpawner, TokioTaskSpawner};
 use crate::credentials::{
@@ -66,6 +67,7 @@ pub const SHARED_CLOUD_ASR_PROVIDER_TYPES: &[&str] = &[
     "iflytek",
     "tencent-cloud",
     "gemini",
+    "gemini-live",
 ];
 
 pub const SHARED_CLOUD_LLM_PROVIDER_TYPES: &[&str] = &[
@@ -189,6 +191,7 @@ enum CloudTranscriptionSessionKind {
     DashScope(Arc<DashScopeMultimodalASR>),
     ElevenLabs(Arc<ElevenLabsBatchASR>),
     Gemini(Arc<GeminiBatchASR>),
+    GeminiLive(Arc<GeminiLiveASR>),
     Bailian(Arc<BailianRealtimeASR>),
     QwenRealtime(Arc<Qwen3RealtimeASR>),
     StepfunRealtime(Arc<StepfunRealtimeASR>),
@@ -242,6 +245,7 @@ impl AudioConsumer for CloudTranscriptionSession {
             CloudTranscriptionSessionKind::DashScope(provider) => provider.consume_pcm_chunk(pcm),
             CloudTranscriptionSessionKind::ElevenLabs(provider) => provider.consume_pcm_chunk(pcm),
             CloudTranscriptionSessionKind::Gemini(provider) => provider.consume_pcm_chunk(pcm),
+            CloudTranscriptionSessionKind::GeminiLive(provider) => provider.consume_pcm_chunk(pcm),
             CloudTranscriptionSessionKind::Bailian(provider) => provider.consume_pcm_chunk(pcm),
             CloudTranscriptionSessionKind::QwenRealtime(provider) => {
                 provider.consume_pcm_chunk(pcm)
@@ -302,6 +306,11 @@ impl TranscriptionSession for CloudTranscriptionSession {
                 CloudTranscriptionSessionKind::Gemini(provider) => {
                     provider.transcribe().await.map_err(map_asr_error)?
                 }
+                CloudTranscriptionSessionKind::GeminiLive(provider) => {
+                    let _ = provider.send_last_frame().await;
+                    timeout_transcription(Duration::from_secs(120), provider.await_final_result())
+                        .await?
+                }
                 CloudTranscriptionSessionKind::Bailian(provider) => {
                     let _ = provider.send_last_frame().await;
                     timeout_transcription(Duration::from_secs(120), provider.await_final_result())
@@ -348,6 +357,13 @@ impl TranscriptionSession for CloudTranscriptionSession {
                 Ok(())
             });
         }
+        if let CloudTranscriptionSessionKind::GeminiLive(provider) = &self.kind {
+            let provider = Arc::clone(provider);
+            return Box::pin(async move {
+                provider.cancel();
+                Ok(())
+            });
+        }
         match &self.kind {
             CloudTranscriptionSessionKind::Volcengine(provider) => provider.cancel(),
             CloudTranscriptionSessionKind::Whisper(provider) => provider.cancel(),
@@ -360,6 +376,7 @@ impl TranscriptionSession for CloudTranscriptionSession {
             CloudTranscriptionSessionKind::Xfyun(provider) => provider.cancel(),
             CloudTranscriptionSessionKind::TencentCloud(provider) => provider.cancel(),
             CloudTranscriptionSessionKind::Gemini(_) => unreachable!(),
+            CloudTranscriptionSessionKind::GeminiLive(_) => unreachable!(),
         }
         Box::pin(async { Ok(()) })
     }
@@ -460,7 +477,8 @@ fn validate_cloud_transcription_preparation(
         | ActiveAsrProviderKind::Mimo
         | ActiveAsrProviderKind::DashScopeMultimodal
         | ActiveAsrProviderKind::ElevenLabs
-        | ActiveAsrProviderKind::Gemini => {
+        | ActiveAsrProviderKind::Gemini
+        | ActiveAsrProviderKind::GeminiLive => {
             require_configured(&preparation.api_key, "ASR API key")?;
         }
         ActiveAsrProviderKind::WhisperCompatible => {
@@ -695,6 +713,37 @@ async fn build_cloud_transcription_session(
                     context.asr.language.clone(),
                     hotwords,
                 ))),
+                Some(effective_model),
+            )
+        }
+        ActiveAsrProviderKind::GeminiLive => {
+            let effective_model = non_blank_owned(model)
+                .unwrap_or_else(|| crate::asr::gemini_live::DEFAULT_MODEL.to_string());
+            crate::provider_rules::validate_gemini_live_asr_model(&effective_model)
+                .map_err(|message| BackendError::new(BackendErrorCode::InvalidArgument, message))?;
+            let endpoint = non_blank_owned(endpoint)
+                .unwrap_or_else(|| crate::asr::gemini_live::DEFAULT_ENDPOINT.to_string());
+            let language_codes = context
+                .asr
+                .language
+                .as_deref()
+                .map(|language| vec![language.to_string()])
+                .unwrap_or_default();
+            let provider = Arc::new(GeminiLiveASR::with_task_spawner(
+                GeminiLiveCredentials {
+                    api_key,
+                    endpoint,
+                    model: effective_model.clone(),
+                    language_codes,
+                    custom_vocabulary: context.polish.hotwords.clone(),
+                    mode: GeminiLiveMode::Verbatim,
+                },
+                Arc::clone(&task_spawner),
+            ));
+            provider.set_partial_sink(Arc::clone(&partials));
+            provider.open_session().await.map_err(map_asr_error)?;
+            (
+                CloudTranscriptionSessionKind::GeminiLive(provider),
                 Some(effective_model),
             )
         }

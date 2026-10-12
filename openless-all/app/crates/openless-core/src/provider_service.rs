@@ -293,6 +293,8 @@ impl ProviderService {
                     let accepted = (probe == ValidationProbe::StepfunNoSpeech
                         && stepfun_no_speech_is_valid(&error))
                         || (probe == ValidationProbe::AsrSilenceAllowsNoFinal
+                            && provider_no_final_is_valid(&error))
+                        || (probe == ValidationProbe::AsrLive
                             && provider_no_final_is_valid(&error));
                     if !accepted {
                         return Err(sanitize_validation_error(error));

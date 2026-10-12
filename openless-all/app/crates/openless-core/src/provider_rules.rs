@@ -23,6 +23,7 @@ const ELEVENLABS_PROVIDER_ID: &str = "elevenlabs";
 const XFYUN_PROVIDER_ID: &str = "iflytek";
 const TENCENT_CLOUD_PROVIDER_ID: &str = "tencent-cloud";
 const GEMINI_PROVIDER_ID: &str = "gemini";
+pub const GEMINI_LIVE_PROVIDER_ID: &str = "gemini-live";
 
 const ASR_PROVIDER_TYPES: &[(&str, &str)] = &[
     ("volcengine", "asrVolcengine"),
@@ -44,6 +45,7 @@ const ASR_PROVIDER_TYPES: &[(&str, &str)] = &[
     (XFYUN_PROVIDER_ID, "asrIflytek"),
     (TENCENT_CLOUD_PROVIDER_ID, "asrTencentCloud"),
     (GEMINI_PROVIDER_ID, "asrGemini"),
+    (GEMINI_LIVE_PROVIDER_ID, "asrGeminiLive"),
     ("foundry-local-whisper", "asrFoundryLocalWhisper"),
     ("local-whisper", "asrLocalWhisper"),
     ("sherpa-onnx-local", "asrSherpaOnnxLocal"),
@@ -112,6 +114,7 @@ const DASHSCOPE_MODELS: &[&str] = &[
     crate::asr::dashscope_multimodal::DEFAULT_MODEL,
 ];
 const GEMINI_MODELS: &[&str] = &[crate::asr::gemini::DEFAULT_MODEL];
+const GEMINI_LIVE_MODELS: &[&str] = &[crate::asr::gemini_live::DEFAULT_MODEL];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -136,6 +139,7 @@ pub enum ValidationProbe {
     /// transcription engine and validation runs the same silence WAV through it,
     /// exercising authorization and recognizer availability for real.
     AsrNativeSilence,
+    AsrLive,
     AsrNonSilent,
     StepfunNoSpeech,
     LlmText,
@@ -237,6 +241,12 @@ fn provider_descriptor_with_label(
             } else {
                 ValidationProbe::Unsupported
             },
+        ),
+        ProviderKind::Asr if id == GEMINI_LIVE_PROVIDER_ID => (
+            default_asr_endpoint(&id),
+            default_asr_model(&id),
+            AuthRequirement::ApiKey,
+            ValidationProbe::AsrLive,
         ),
         ProviderKind::Asr => (
             default_asr_endpoint(&id),
@@ -359,6 +369,7 @@ fn static_models(kind: ProviderKind, provider_type: &str) -> &'static [&'static 
         (ProviderKind::Asr, "xiaomi-mimo-asr") => &[crate::asr::mimo::DEFAULT_MODEL],
         (ProviderKind::Asr, "bailian-fun-asr-flash") => DASHSCOPE_MODELS,
         (ProviderKind::Asr, "gemini") => GEMINI_MODELS,
+        (ProviderKind::Asr, GEMINI_LIVE_PROVIDER_ID) => GEMINI_LIVE_MODELS,
         (ProviderKind::Asr, "elevenlabs") => &[crate::asr::elevenlabs::DEFAULT_MODEL],
         (ProviderKind::Asr, "minimax") => &["asr-1.0"],
         (ProviderKind::Llm, crate::polish::CODEX_OAUTH_PROVIDER_ID) => &[
@@ -391,6 +402,7 @@ pub enum ActiveAsrProviderKind {
     Xfyun,
     TencentCloud,
     Gemini,
+    GeminiLive,
 }
 
 /// Non-secret facts read by a platform credential adapter. Core evaluates
@@ -573,6 +585,7 @@ pub fn default_asr_endpoint(provider_type: &str) -> Option<&'static str> {
         "zenmux" => Some("https://zenmux.ai/api/v1"),
         "xiaomi-mimo-asr" => Some("https://api.xiaomimimo.com/v1"),
         GEMINI_PROVIDER_ID => Some(crate::asr::gemini::DEFAULT_ENDPOINT),
+        GEMINI_LIVE_PROVIDER_ID => Some(crate::asr::gemini_live::DEFAULT_ENDPOINT),
         _ => None,
     }
 }
@@ -594,6 +607,7 @@ pub fn default_asr_model(provider_type: &str) -> Option<&'static str> {
         "zenmux" => Some(crate::asr::whisper::ZENMUX_DEFAULT_MODEL),
         "xiaomi-mimo-asr" => Some(crate::asr::mimo::DEFAULT_MODEL),
         GEMINI_PROVIDER_ID => Some(crate::asr::gemini::DEFAULT_MODEL),
+        GEMINI_LIVE_PROVIDER_ID => Some(crate::asr::gemini_live::DEFAULT_MODEL),
         TENCENT_CLOUD_PROVIDER_ID => Some(crate::asr::tencent_cloud::DEFAULT_MODEL),
         _ => None,
     }
@@ -766,6 +780,7 @@ pub fn active_asr_provider_kind(id: &str) -> ActiveAsrProviderKind {
         XFYUN_PROVIDER_ID => ActiveAsrProviderKind::Xfyun,
         TENCENT_CLOUD_PROVIDER_ID => ActiveAsrProviderKind::TencentCloud,
         GEMINI_PROVIDER_ID => ActiveAsrProviderKind::Gemini,
+        GEMINI_LIVE_PROVIDER_ID => ActiveAsrProviderKind::GeminiLive,
         value if is_whisper_compatible_provider(value) => ActiveAsrProviderKind::WhisperCompatible,
         _ => ActiveAsrProviderKind::Volcengine,
     }
@@ -779,6 +794,18 @@ pub fn validate_gemini_asr_model(model: &str) -> Result<(), String> {
             "不支持的 Gemini ASR 模型：{}。当前仅支持 {}",
             model.trim(),
             crate::asr::gemini::DEFAULT_MODEL
+        ))
+    }
+}
+
+pub fn validate_gemini_live_asr_model(model: &str) -> Result<(), String> {
+    if model.trim().is_empty() || model.trim() == crate::asr::gemini_live::DEFAULT_MODEL {
+        Ok(())
+    } else {
+        Err(format!(
+            "不支持的 Gemini Live ASR 模型：{}。当前仅支持 {}",
+            model.trim(),
+            crate::asr::gemini_live::DEFAULT_MODEL
         ))
     }
 }
@@ -897,6 +924,10 @@ pub fn resolve_effective_asr_provider(active_asr: &str, model: &str) -> Result<S
     if active_asr == GEMINI_PROVIDER_ID {
         validate_gemini_asr_model(model)?;
         return Ok(GEMINI_PROVIDER_ID.to_string());
+    }
+    if active_asr == GEMINI_LIVE_PROVIDER_ID {
+        validate_gemini_live_asr_model(model)?;
+        return Ok(GEMINI_LIVE_PROVIDER_ID.to_string());
     }
     if !is_bailian_provider(active_asr) {
         if is_dashscope_multimodal_provider(active_asr) {
@@ -1481,6 +1512,42 @@ mod tests {
         );
         assert!(resolve_effective_asr_provider("gemini", "gemini-3.5-transcribe-live").is_err());
         assert!(resolve_effective_asr_provider("gemini", "unknown").is_err());
+
+        assert!(crate::cloud_providers::SHARED_CLOUD_ASR_PROVIDER_TYPES
+            .contains(&GEMINI_LIVE_PROVIDER_ID));
+        let live = provider_descriptor(ProviderKind::Asr, GEMINI_LIVE_PROVIDER_ID).unwrap();
+        assert_eq!(live.label_key, "asrGeminiLive");
+        assert_eq!(
+            live.default_endpoint.as_deref(),
+            Some(crate::asr::gemini_live::DEFAULT_ENDPOINT)
+        );
+        assert_eq!(
+            live.default_model.as_deref(),
+            Some(crate::asr::gemini_live::DEFAULT_MODEL)
+        );
+        assert_eq!(
+            live.static_models,
+            vec![crate::asr::gemini_live::DEFAULT_MODEL.to_string()]
+        );
+        assert_eq!(live.validation_probe, ValidationProbe::AsrLive);
+        assert_eq!(
+            active_asr_provider_kind(GEMINI_LIVE_PROVIDER_ID),
+            ActiveAsrProviderKind::GeminiLive
+        );
+        assert_eq!(
+            resolve_effective_asr_provider(GEMINI_LIVE_PROVIDER_ID, ""),
+            Ok(GEMINI_LIVE_PROVIDER_ID.to_string())
+        );
+        assert!(resolve_effective_asr_provider(
+            GEMINI_LIVE_PROVIDER_ID,
+            crate::asr::gemini::DEFAULT_MODEL
+        )
+        .is_err());
+        assert!(resolve_effective_asr_provider(
+            GEMINI_LIVE_PROVIDER_ID,
+            crate::asr::gemini_live::DEFAULT_MODEL
+        )
+        .is_ok());
     }
 
     #[test]
