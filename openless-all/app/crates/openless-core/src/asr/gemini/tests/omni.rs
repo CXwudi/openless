@@ -160,10 +160,12 @@ async fn omni_engine_returns_smart_text_without_a_second_llm_call() {
             Vec::new(),
         )),
     );
-    let mut context = DictationContext::default();
-    context.audio_source = DictationAudioSource::External;
-    context.pipeline_mode = crate::shared_types::PipelineMode::Multimodal;
-    context.omni = ProviderInvocation::for_provider(PROVIDER_ID);
+    let mut context = DictationContext {
+        audio_source: DictationAudioSource::External,
+        pipeline_mode: crate::shared_types::PipelineMode::Multimodal,
+        omni: ProviderInvocation::for_provider(PROVIDER_ID),
+        ..Default::default()
+    };
     context.polish.working_languages = vec!["en".into(), "zh".into(), "en".into()];
     context.polish.hotwords = vec!["OpenLess".into(), " Gemini ".into()];
     let context = Arc::new(context);
