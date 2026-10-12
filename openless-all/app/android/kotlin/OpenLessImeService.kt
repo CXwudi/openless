@@ -46,7 +46,12 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
     // (see buildKeyboardView()'s spaceButton); the panel/View tree itself
     // is never rebuilt into a second layout for PINYIN — see
     // docs/pinyin-lite/phase-0-audit.md section 7.
-    internal enum class LatinInputMode { ENGLISH, PINYIN }
+    internal enum class LatinInputMode {
+        ENGLISH,
+        PINYIN;
+
+        fun toggled(): LatinInputMode = if (this == ENGLISH) PINYIN else ENGLISH
+    }
 
     private var lastCancelledImeRequest = 0L
     private var imeRequestId = 0L
@@ -552,7 +557,7 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
         englishComposingWord.clear()
         englishCandidateQueryEpoch++
         litePinyinController.clear()
-        latinInputMode = if (latinInputMode == LatinInputMode.ENGLISH) LatinInputMode.PINYIN else LatinInputMode.ENGLISH
+        latinInputMode = latinInputMode.toggled()
         saveLatinInputMode(latinInputMode)
         refreshLatinCandidateBar()
         performKeyHaptic()
@@ -1583,16 +1588,12 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
             textSize = 12f
             gravity = android.view.Gravity.CENTER
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            isClickable = false
-            // The actual bug behind every earlier "text is just missing"
-            // attempt at a FrameLayout overlay on a keyboardKey(): that key
-            // has its own non-zero elevation+translationZ (dp(5)+dp(1), see
-            // keyboardKey()'s own body) for its raised-surface look, and on
-            // API 21+ ViewGroup draws children in Z order — not insertion
-            // order — whenever their Z values differ. spaceButton's Z was
-            // silently winning and painting straight over this View despite
-            // being added to the FrameLayout first. A higher Z here forces
-            // this View to actually draw on top.
+            isClickable = true
+            isFocusable = true
+            contentDescription = ui("切换拼音和英文", "Switch between Pinyin and English")
+            setOnClickListener { toggleLatinInputMode() }
+            // Keep the hint above the raised space key so its tap target is
+            // the visible mode label rather than the key underneath it.
             translationZ = dp(10).toFloat()
         }
         val spaceWrapper = FrameLayout(this).apply {

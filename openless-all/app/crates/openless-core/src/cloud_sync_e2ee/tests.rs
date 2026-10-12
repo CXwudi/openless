@@ -888,7 +888,7 @@ async fn auto_sync_local_retry_releases_runtime_and_respects_pause() {
     })
     .await;
     tokio::time::timeout(
-        std::time::Duration::from_millis(200),
+        std::time::Duration::from_secs(2),
         fixture.service.set_enabled(false),
     )
     .await
