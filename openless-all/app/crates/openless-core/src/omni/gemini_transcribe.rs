@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use super::OmniConfig;
 use crate::asr::gemini::{GeminiBatchASR, TranscriptionMode};
+use crate::config::{TaskSpawner, TokioTaskSpawner};
 use crate::polish::LLMError;
 
 /// Uses the dedicated audio API instead of Gemini's general-purpose chat API.
@@ -12,14 +13,23 @@ pub struct GeminiTranscribeOmni {
     config: OmniConfig,
     languages: Vec<String>,
     hotwords: Vec<String>,
+    task_spawner: Arc<dyn TaskSpawner>,
 }
 
 impl GeminiTranscribeOmni {
     pub fn new(config: OmniConfig) -> Self {
+        Self::with_task_spawner(config, Arc::new(TokioTaskSpawner))
+    }
+
+    pub(crate) fn with_task_spawner(
+        config: OmniConfig,
+        task_spawner: Arc<dyn TaskSpawner>,
+    ) -> Self {
         Self {
             config,
             languages: Vec::new(),
             hotwords: Vec::new(),
+            task_spawner,
         }
     }
 
@@ -60,12 +70,18 @@ impl GeminiTranscribeOmni {
         );
         let worker = Arc::clone(&provider);
         let wav = wav.to_vec();
+        let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
+        self.task_spawner.spawn(Box::pin(async move {
+            let _ = result_sender.send(worker.transcribe_wav(&wav).await);
+        }));
         // The engine may drop this future on cancellation. Keep the worker alive
         // long enough to cancel the interaction and delete its temporary file.
-        let task = tokio::spawn(async move { worker.transcribe_wav(&wav).await });
-        let mut cleanup = CancelOnDrop(Some(provider));
-        let result = task.await;
-        cleanup.0 = None;
+        let mut cleanup = CancelOnDrop {
+            provider: Some(provider),
+            task_spawner: Arc::clone(&self.task_spawner),
+        };
+        let result = result_receiver.await;
+        cleanup.provider = None;
         result
             .map_err(|_| LLMError::Network("Gemini transcription task failed".into()))?
             .map_err(sanitize_transcription_error)
@@ -135,12 +151,16 @@ fn extract_http_status(message: &str) -> Option<u16> {
 }
 
 /// Cancels the detached worker if its caller stops awaiting the result.
-struct CancelOnDrop(Option<Arc<GeminiBatchASR>>);
+struct CancelOnDrop {
+    provider: Option<Arc<GeminiBatchASR>>,
+    task_spawner: Arc<dyn TaskSpawner>,
+}
 
 impl Drop for CancelOnDrop {
     fn drop(&mut self) {
-        if let Some(provider) = self.0.take() {
-            tokio::spawn(async move { provider.cancel().await });
+        if let Some(provider) = self.provider.take() {
+            self.task_spawner
+                .spawn(Box::pin(async move { provider.cancel().await }));
         }
     }
 }
