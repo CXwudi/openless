@@ -1617,6 +1617,7 @@ export const zhTW: typeof zhCN = {
         asrXiaomiMimo: '小米 MiMo ASR',
         asrIflytek: '訊飛即時語音轉寫',
         asrTencentCloud: '騰訊雲混元即時 ASR',
+        asrGemini: 'Google Gemini 專用轉寫',
         asrElevenLabs: 'ElevenLabs Scribe',
         asrSherpaOnnxLocal: '本地 sherpa-onnx（實驗性）',
         asrFoundryLocalWhisper: '本地 Whisper（Foundry Local）',
@@ -1629,6 +1630,11 @@ export const zhTW: typeof zhCN = {
         omniGemini: 'Google Gemini',
         omniDashscope: '阿里雲百煉 Omni',
       },
+      geminiTranscribeNotice:
+        'gemini-3.5-transcribe 在此使用逐字轉寫，再交給已設定的 LLM 處理。如需內建智慧轉寫，請在多模態模式中選擇此模型。錄音結束後上傳音訊，暫不支援即時轉寫。接口地址：https://generativelanguage.googleapis.com/v1beta，也相容 /v1beta/interactions。',
+      geminiTranscribeOmniNotice:
+        '使用 gemini-3.5-transcribe 可啟用智慧轉寫：錄音結束後去除口頭語、處理口述修正並整理排版。支援工作語言和詞典詞彙。此模型不使用風格提示詞，也不支援翻譯、純文字潤色或問答；這些任務請使用傳統模式搭配 LLM。',
+      validateSuccessAudio: '已通過短靜音音訊的連線驗證，請再用短錄音確認轉寫效果。',
       elevenLabsUploadNotice: 'ElevenLabs 會將錄音上傳至已設定的端點進行批次轉寫。',
       zenmuxVocabularyNote:
         'ZenMux 走 JSON 轉寫協定，不傳送詞典熱詞（prompt/hotwords）；詞典仍會進入潤色鏈路，但不會參與語音辨識偏置。',

@@ -15,7 +15,7 @@ use parking_lot::{Mutex, RwLock};
 use crate::asr::tencent_cloud::TencentCloudASRError;
 use crate::asr::{
     BailianCredentials, BailianRealtimeASR, DashScopeMultimodalASR, DictionaryHotword,
-    ElevenLabsBatchASR, MimoBatchASR, Qwen3RealtimeASR, Qwen3RealtimeCredentials,
+    ElevenLabsBatchASR, GeminiBatchASR, MimoBatchASR, Qwen3RealtimeASR, Qwen3RealtimeCredentials,
     StepfunRealtimeASR, StepfunRealtimeCredentials, TencentCloudCredentials,
     TencentCloudStreamingASR, VolcengineCredentials, VolcengineStreamingASR, WhisperBatchASR,
     XfyunCredentials, XfyunStreamingASR,
@@ -65,6 +65,7 @@ pub const SHARED_CLOUD_ASR_PROVIDER_TYPES: &[&str] = &[
     "xiaomi-mimo-asr",
     "iflytek",
     "tencent-cloud",
+    "gemini",
 ];
 
 pub const SHARED_CLOUD_LLM_PROVIDER_TYPES: &[&str] = &[
@@ -169,12 +170,17 @@ impl PreparedTranscription for PreparedCloudTranscription {
         let preparation = self.preparation.clone();
         let task_spawner = Arc::clone(&self.task_spawner);
         Box::pin(async move {
-            let (kind, asr_call_label) =
-                build_cloud_transcription_session(&preparation, task_spawner, partials).await?;
+            let (kind, asr_call_label) = build_cloud_transcription_session(
+                &preparation,
+                Arc::clone(&task_spawner),
+                partials,
+            )
+            .await?;
             Ok(Arc::new(CloudTranscriptionSession {
                 kind,
                 asr_call_label,
                 finished: AtomicBool::new(false),
+                task_spawner,
             }) as Arc<dyn TranscriptionSession>)
         })
     }
@@ -187,6 +193,7 @@ enum CloudTranscriptionSessionKind {
     Mimo(Arc<MimoBatchASR>),
     DashScope(Arc<DashScopeMultimodalASR>),
     ElevenLabs(Arc<ElevenLabsBatchASR>),
+    Gemini(Arc<GeminiBatchASR>),
     Bailian(Arc<BailianRealtimeASR>),
     QwenRealtime(Arc<Qwen3RealtimeASR>),
     StepfunRealtime(Arc<StepfunRealtimeASR>),
@@ -198,6 +205,7 @@ struct CloudTranscriptionSession {
     kind: CloudTranscriptionSessionKind,
     asr_call_label: crate::AsrCallLabel,
     finished: AtomicBool,
+    task_spawner: Arc<dyn TaskSpawner>,
 }
 
 impl TranscriptionEngine for SharedCloudTranscriptionEngine {
@@ -239,6 +247,7 @@ impl AudioConsumer for CloudTranscriptionSession {
             CloudTranscriptionSessionKind::Mimo(provider) => provider.consume_pcm_chunk(pcm),
             CloudTranscriptionSessionKind::DashScope(provider) => provider.consume_pcm_chunk(pcm),
             CloudTranscriptionSessionKind::ElevenLabs(provider) => provider.consume_pcm_chunk(pcm),
+            CloudTranscriptionSessionKind::Gemini(provider) => provider.consume_pcm_chunk(pcm),
             CloudTranscriptionSessionKind::Bailian(provider) => provider.consume_pcm_chunk(pcm),
             CloudTranscriptionSessionKind::QwenRealtime(provider) => {
                 provider.consume_pcm_chunk(pcm)
@@ -269,6 +278,7 @@ impl TranscriptionSession for CloudTranscriptionSession {
             });
         }
         let kind = self.kind.clone();
+        let task_spawner = Arc::clone(&self.task_spawner);
         Box::pin(async move {
             let transcript = match kind {
                 CloudTranscriptionSessionKind::Volcengine(provider) => {
@@ -295,6 +305,28 @@ impl TranscriptionSession for CloudTranscriptionSession {
                         provider.buffer_duration_ms() as f64 / 1000.0,
                     );
                     timeout_transcription(timeout, provider.transcribe()).await?
+                }
+                CloudTranscriptionSessionKind::Gemini(provider) => {
+                    let worker = Arc::clone(&provider);
+                    let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
+                    task_spawner.spawn(Box::pin(async move {
+                        let _ = result_sender.send(worker.transcribe().await);
+                    }));
+                    // Verify may drop finish on cancellation; the worker still owns file cleanup.
+                    let mut cleanup = crate::asr::gemini::CancelOnDrop {
+                        provider: Some(provider),
+                        task_spawner,
+                    };
+                    let result = result_receiver.await;
+                    cleanup.provider = None;
+                    result
+                        .map_err(|_| {
+                            BackendError::new(
+                                BackendErrorCode::Internal,
+                                "Gemini transcription task failed",
+                            )
+                        })?
+                        .map_err(map_asr_error)?
                 }
                 CloudTranscriptionSessionKind::Bailian(provider) => {
                     let _ = provider.send_last_frame().await;
@@ -335,6 +367,13 @@ impl TranscriptionSession for CloudTranscriptionSession {
     }
 
     fn cancel(&self) -> BoxFuture<'static, Result<(), BackendError>> {
+        if let CloudTranscriptionSessionKind::Gemini(provider) = &self.kind {
+            let provider = Arc::clone(provider);
+            return Box::pin(async move {
+                provider.cancel().await;
+                Ok(())
+            });
+        }
         match &self.kind {
             CloudTranscriptionSessionKind::Volcengine(provider) => provider.cancel(),
             CloudTranscriptionSessionKind::Whisper(provider) => provider.cancel(),
@@ -346,6 +385,7 @@ impl TranscriptionSession for CloudTranscriptionSession {
             CloudTranscriptionSessionKind::StepfunRealtime(provider) => provider.cancel(),
             CloudTranscriptionSessionKind::Xfyun(provider) => provider.cancel(),
             CloudTranscriptionSessionKind::TencentCloud(provider) => provider.cancel(),
+            CloudTranscriptionSessionKind::Gemini(_) => unreachable!(),
         }
         Box::pin(async { Ok(()) })
     }
@@ -445,7 +485,8 @@ fn validate_cloud_transcription_preparation(
         | ActiveAsrProviderKind::StepfunRealtime
         | ActiveAsrProviderKind::Mimo
         | ActiveAsrProviderKind::DashScopeMultimodal
-        | ActiveAsrProviderKind::ElevenLabs => {
+        | ActiveAsrProviderKind::ElevenLabs
+        | ActiveAsrProviderKind::Gemini => {
             require_configured(&preparation.api_key, "ASR API key")?;
         }
         ActiveAsrProviderKind::WhisperCompatible => {
@@ -660,6 +701,25 @@ async fn build_cloud_transcription_session(
                     non_blank_owned(endpoint)
                         .unwrap_or_else(|| crate::asr::elevenlabs::DEFAULT_ENDPOINT.to_string()),
                     effective_model.clone(),
+                ))),
+                Some(effective_model),
+            )
+        }
+        ActiveAsrProviderKind::Gemini => {
+            let effective_model = non_blank_owned(model)
+                .unwrap_or_else(|| crate::asr::gemini::DEFAULT_MODEL.to_string());
+            crate::provider_rules::validate_gemini_asr_model(&effective_model)
+                .map_err(|message| BackendError::new(BackendErrorCode::InvalidArgument, message))?;
+            let endpoint = non_blank_owned(endpoint)
+                .unwrap_or_else(|| crate::asr::gemini::DEFAULT_ENDPOINT.to_string());
+            let hotwords = context.polish.hotwords.clone();
+            (
+                CloudTranscriptionSessionKind::Gemini(Arc::new(GeminiBatchASR::new(
+                    api_key,
+                    endpoint,
+                    effective_model.clone(),
+                    context.asr.language.clone(),
+                    hotwords,
                 ))),
                 Some(effective_model),
             )
@@ -1682,19 +1742,43 @@ async fn build_omni_provider(
         ),
         thinking_enabled: context.polish.llm_thinking_enabled,
     };
-    Ok(crate::omni::OmniProvider::new(config))
+    let provider = crate::omni::OmniProvider::new(config)
+        .with_transcription_hints(&context.polish.working_languages, &context.polish.hotwords);
+    validate_omni_context(&provider, context)?;
+    Ok(provider)
+}
+
+/// Dedicated transcription cannot apply a translation prompt.
+fn validate_omni_context(
+    provider: &crate::omni::OmniProvider,
+    context: &DictationContext,
+) -> Result<(), BackendError> {
+    if provider.is_transcription_only() && context.polish.translation_active {
+        return Err(BackendError::new(
+            BackendErrorCode::InvalidArgument,
+            "Gemini Transcribe does not support translation in Multimodal mode; use Traditional mode with a language model",
+        ));
+    }
+    Ok(())
 }
 
 /// Validate an Omni provider using the same construction and request path as
-/// the production dictation pipeline.  The probe is intentionally text-only:
-/// it exercises credential, endpoint, model and protocol resolution without
-/// retaining user audio.  UI must not treat text success as proof that audio
-/// dictation works (issue #1118).
+/// dictation. Dedicated transcription uses synthetic silence; general-purpose
+/// models use a text probe, which does not prove audio support (issue #1118).
 pub async fn validate_shared_omni_provider(
     credentials: Arc<dyn CredentialStore>,
     context: Arc<DictationContext>,
 ) -> Result<(), BackendError> {
     let provider = build_omni_provider(credentials.as_ref(), context.as_ref()).await?;
+    if provider.is_transcription_only() {
+        let wav = crate::asr::wav::encode_wav_16k_mono(&vec![0; 8_000]);
+        provider
+            .complete("", "", Some(&wav))
+            .await
+            .map_err(map_omni_error)?;
+        // Completed silence legitimately produces no transcript.
+        return Ok(());
+    }
     let result = provider
         .complete("验证连接", "ping", None)
         .await
@@ -2066,6 +2150,7 @@ impl DictationEngine for SharedOmniDictationEngine {
                     "Omni dictation context can only change before finalization",
                 ));
             }
+            validate_omni_context(&session.provider, &context)?;
             *session.context.write() = context;
             Ok(())
         })

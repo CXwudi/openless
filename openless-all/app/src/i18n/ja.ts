@@ -1687,6 +1687,7 @@ export const ja: typeof zhCN = {
         asrOpenAiCompatible: 'カスタム OpenAI 互換',
         asrXiaomiMimo: 'Xiaomi MiMo ASR',
         asrIflytek: 'iFlytek リアルタイム音声認識',
+        asrGemini: 'Google Gemini Transcribe',
         asrTencentCloud: 'Tencent Cloud Hunyuan リアルタイム ASR',
         asrElevenLabs: 'ElevenLabs Scribe',
         asrSherpaOnnxLocal: 'ローカル sherpa-onnx（実験的）',
@@ -1700,6 +1701,12 @@ export const ja: typeof zhCN = {
         omniGemini: 'Google Gemini',
         omniDashscope: 'Alibaba DashScope Omni',
       },
+      geminiTranscribeNotice:
+        'ここでは gemini-3.5-transcribe で逐語的に文字起こしし、設定済みの LLM で処理します。スマート文字起こしには、マルチモーダルモードでこのモデルを選択してください。録音終了後にアップロードします。リアルタイムには未対応です。ベース URL：https://generativelanguage.googleapis.com/v1beta（/v1beta/interactions も使用可能）。',
+      geminiTranscribeOmniNotice:
+        'gemini-3.5-transcribe はスマート文字起こしに対応し、録音終了後にフィラーの除去、言い直しの反映、文章の整形を行います。作業言語と辞書を利用できます。スタイルプロンプト、翻訳、テキスト校正、質問応答には対応しません。これらには従来モードと LLM を使用してください。',
+      validateSuccessAudio:
+        '短い無音データで音声接続を確認しました。短い録音で文字起こしの品質も確認してください。',
       elevenLabsUploadNotice:
         'ElevenLabs は録音音声を設定済みのエンドポイントへアップロードしてバッチ文字起こしします。',
       zenmuxVocabularyNote:

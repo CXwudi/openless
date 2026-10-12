@@ -1724,6 +1724,7 @@ export const de: typeof zhCN = {
         stepfun: 'StepFun',
         custom: 'Benutzerdefiniert',
         asrVolcengine: 'Volcengine bigasr',
+        asrGemini: 'Google Gemini Transcribe',
         asrTencentCloud: 'Tencent Cloud Hunyuan Echtzeit-ASR',
         asrBailian: 'Alibaba Bailian Echtzeit-ASR',
         asrBailianQwen3: 'Bailian Qwen3 Realtime ASR',
@@ -1751,6 +1752,12 @@ export const de: typeof zhCN = {
         omniGemini: 'Google Gemini',
         omniDashscope: 'Alibaba DashScope Omni',
       },
+      geminiTranscribeNotice:
+        'gemini-3.5-transcribe transkribiert hier wortgetreu; danach verarbeitet das konfigurierte LLM den Text. Für Smart-Transkription wähle dieses Modell im multimodalen Modus. Audio wird nach Aufnahmeende hochgeladen; Live-Transkription wird nicht unterstützt. Basis-URL: https://generativelanguage.googleapis.com/v1beta (auch /v1beta/interactions möglich).',
+      geminiTranscribeOmniNotice:
+        'gemini-3.5-transcribe bietet Smart-Transkription: Füllwörter entfernen, gesprochene Korrekturen übernehmen und den Text nach Aufnahmeende formatieren. Arbeitssprachen und Wörterbucheinträge werden unterstützt. Stil-Prompts, Übersetzung, reine Textüberarbeitung und Fragen werden nicht unterstützt; verwende dafür den traditionellen Modus mit einem LLM.',
+      validateSuccessAudio:
+        'Audio-Verbindung mit einer kurzen Stilleprobe geprüft. Bestätige die Transkriptionsqualität mit einer kurzen Aufnahme.',
       elevenLabsUploadNotice:
         'ElevenLabs lädt die Audioaufnahme zur Stapeltranskription an den eingerichteten Endpunkt hoch.',
       zenmuxVocabularyNote:
