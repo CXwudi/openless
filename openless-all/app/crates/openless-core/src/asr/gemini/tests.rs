@@ -393,9 +393,10 @@ async fn dropped_asr_finish_cancels_once_and_deletes_audio() {
     );
     let (credentials, channel) = asr_credentials(&endpoint).await;
     let engine = SharedCloudTranscriptionEngine::new(credentials);
-    let mut context = crate::DictationContext::default();
-    context.asr = crate::ProviderInvocation::for_provider(&channel);
-    context.asr.provider_type = PROVIDER_ID.into();
+    let context = crate::DictationContext {
+        asr: crate::ProviderInvocation::new(&channel, PROVIDER_ID),
+        ..Default::default()
+    };
     let session = engine
         .start(
             crate::SessionId::new(),
