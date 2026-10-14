@@ -110,7 +110,11 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
 
     private fun stopImeSession() {
         if (imeSessionId == null) pendingImeStop = true
-        else if (!sendImeCommand("stop")) { recording = false; processing = false }
+        else if (!sendImeCommand("stop")) {
+            recording = false
+            processing = false
+            releaseDismissedEditReplacement()
+        }
     }
 
     private fun onImeSessionEvent(json: String) {
@@ -145,6 +149,10 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
                 imeSessionId = null
                 pendingImeStop = false
                 pendingCloudArm = false
+                // The edit panel was already dismissed when recording stopped.
+                // Leaving the replacement armed makes the next successful
+                // dictation delete the old span by length.
+                releaseDismissedEditReplacement()
                 setState("error", ui("听写失败，请重试", "Dictation failed; please retry"))
             }
         }
@@ -347,6 +355,9 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
     // polish animation plays there, not on the compact edit view), while
     // this flag keeps commitImeText() routing the eventual result to
     // finishEditWithSpokenReplacement() instead of a normal commit.
+    // A failed session, or a later tap on the main mic, must release it —
+    // otherwise that next utterance is still treated as the correction and
+    // deletes original.length characters before the cursor.
     private var awaitingEditReplacement = false
     // The exact span being replaced by the edit flow's "speak the correct
     // word" mic: either whatever the user selected in the real input field,
@@ -3521,6 +3532,10 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
             rawModeArmed = false
             quickNoteArmed = false
             cloudNoteArmed = false
+            // A tap on the main mic (edit panel already gone) is a new
+            // utterance. Drop a correction that failed or was superseded
+            // before its result arrived, so this session cannot inherit it.
+            releaseDismissedEditReplacement()
             // The actual start of a new recording attempt — reset the
             // silence watch and fire the start haptic here, not in
             // onCapsuleStateChanged's "recording" branch: that branch only
@@ -4082,6 +4097,25 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
         awaitingEditReplacement = true
         refreshInputView()
         toggleDictation()
+    }
+
+    /**
+     * Drops a spoken correction that is no longer on screen. The in-flight
+     * result of an open edit panel must keep its replacement; once that panel
+     * is gone, the next commit is an ordinary insert.
+     */
+    private fun releaseDismissedEditReplacement() {
+        val next = PendingEditReplacement(
+            awaiting = awaitingEditReplacement,
+            panelVisible = editingDictationResult,
+            original = editingOriginalText,
+            replacesWhole = editingReplacesWholeResult,
+            addToDictionary = addToDictionaryForEdit,
+        ).releaseIfPanelDismissed()
+        awaitingEditReplacement = next.awaiting
+        editingOriginalText = next.original
+        editingReplacesWholeResult = next.replacesWhole
+        addToDictionaryForEdit = next.addToDictionary
     }
 
     /** Backs out of the edit sub-view without applying any correction. */
