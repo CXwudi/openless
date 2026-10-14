@@ -6452,7 +6452,8 @@ impl OpenLessBackend {
                         engine_result.asr_ms,
                         engine_result.polish_ms,
                         engine_result.has_audio_recording,
-                        context.uses_llm_polisher(),
+                        context.uses_llm_polisher()
+                            && !context.skips_polish_for_short_text(&engine_result.raw_text),
                         engine_result.asr_call_label.clone(),
                         engine_result.llm_call_label.clone(),
                     );
@@ -6687,7 +6688,8 @@ impl OpenLessBackend {
             crate::shared_types::PipelineMode::Traditional => "traditional",
             crate::shared_types::PipelineMode::Multimodal => "multimodal",
         };
-        let llm_used = context.uses_llm_polisher();
+        let llm_used = context.uses_llm_polisher()
+            && !context.skips_polish_for_short_text(&engine_result.raw_text);
         let attribution = HistoryProviderAttribution::from_context(
             context,
             llm_used,
@@ -7194,6 +7196,26 @@ impl OpenLessBackend {
             options,
         );
         context.pipeline_mode = pipeline_mode;
+        // Issue #1032: when the LLM channel is not configured, mark the
+        // session as eligible for the Raw fallback instead of dispatching a
+        // polish request that cannot succeed. The context keeps its original
+        // style until the destination is known, so a later Cloud Note or
+        // translation choice can still take the polish path. A configured
+        // channel whose call fails still takes the polish fallback path below.
+        if purpose == DictationContextPurpose::Dictation
+            && traditional
+            && deferred_llm_error.is_none()
+            && context.uses_llm_polisher()
+            && !crate::cloud_providers::llm_channel_configured(
+                self.deps.credential_store.as_ref(),
+                &context.llm.provider_id,
+                &context.llm.provider_type,
+                context.llm.model.as_deref(),
+            )
+            .await
+        {
+            context = context.with_unconfigured_llm_raw();
+        }
         if let Some(error) = deferred_llm_error {
             if purpose != DictationContextPurpose::Dictation || context.uses_llm_polisher() {
                 return Err(error);
@@ -9450,6 +9472,22 @@ mod tests {
             .unwrap();
     }
 
+    /// Dictation fixtures exercise the polish path, so they run with a configured
+    /// default LLM channel (`ark`). Unconfigured channels now run as Raw (issue #1032).
+    fn llm_configured_credentials() -> Arc<crate::credentials::InMemoryCredentialStore> {
+        Arc::new(
+            crate::credentials::InMemoryCredentialStore::default().with_secret(
+                CredentialKey::new(
+                    crate::credentials::CredentialNamespace::Llm,
+                    Some("ark".to_string()),
+                    crate::credentials::LLM_API_KEY_ACCOUNT,
+                )
+                .unwrap(),
+                SecretValue::new("fixture-key"),
+            ),
+        )
+    }
+
     fn backend_with_dictation_engine(
         data_dir: std::path::PathBuf,
         dictation_engine: Arc<dyn DictationEngine>,
@@ -9466,7 +9504,7 @@ mod tests {
                 )),
                 dictation_engine,
                 task_spawner: Arc::new(TokioTaskSpawner),
-                credential_store: Arc::new(crate::credentials::InMemoryCredentialStore::default()),
+                credential_store: llm_configured_credentials(),
                 services: crate::domains::BackendServices::unsupported(),
                 local_asr_runtime: None,
                 marketplace_config: None,
@@ -11439,8 +11477,7 @@ mod tests {
         let contexts = engine.contexts();
         assert_eq!(contexts.len(), 2);
         assert!(!contexts[0].polish.translation_active);
-        let mut expected = (*contexts[0]).clone();
-        expected.polish.translation_active = true;
+        let expected = contexts[0].with_translation_requested(true);
         assert_eq!(*contexts[1], expected);
         assert_eq!(
             contexts[1].recording.microphone_device_name.as_deref(),
@@ -12583,6 +12620,20 @@ mod tests {
         )
         .unwrap();
         backend.start().await.unwrap();
+        // Configure the default LLM channel so the polish call is actually dispatched
+        // and fails; an unconfigured channel now runs as Raw (issue #1032).
+        backend
+            .set_credential(
+                CredentialKey::new(
+                    crate::credentials::CredentialNamespace::Llm,
+                    Some("ark".to_string()),
+                    crate::credentials::LLM_API_KEY_ACCOUNT,
+                )
+                .unwrap(),
+                SecretValue::new("fixture-key"),
+            )
+            .await
+            .unwrap();
 
         backend.start_dictation().await.unwrap();
         let result = backend.stop_dictation().await.unwrap();
@@ -12596,6 +12647,247 @@ mod tests {
         assert_eq!(history[0].has_audio_recording, Some(false));
 
         let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn unconfigured_llm_runs_as_raw_without_polish_failure() {
+        // Issue #1032: with no LLM API key the default Light mode must not dispatch
+        // polish (which would fail and record polishFailed); the dictation runs as Raw.
+        let data_dir = std::env::temp_dir().join(format!(
+            "openless-core-unconfigured-llm-history-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let engine = crate::dictation_engine::PipelineDictationEngine::new(
+            Arc::new(
+                crate::testing::FixtureAudioRecorder::new(vec![vec![1, 0, 2, 0]], vec![(25, 0.5)])
+                    .with_archived_recording(true),
+            ),
+            Arc::new(crate::testing::FixtureTranscriptionEngine::successful(
+                "raw fallback",
+                25,
+            )),
+            Arc::new(crate::testing::FixtureTextPolisher::failing(
+                BackendError::new(BackendErrorCode::Provider, "polish must not be called"),
+            )),
+        );
+        let backend = OpenLessBackend::new(
+            BackendConfig {
+                data_dir: data_dir.clone(),
+                ..BackendConfig::default()
+            },
+            BackendDependencies {
+                host_actions: Arc::new(FakeHost::default()),
+                text_inserter: Arc::new(crate::testing::FixtureTextInserter::with_outcome(
+                    InsertOutcome::Inserted,
+                )),
+                dictation_engine: Arc::new(engine),
+                task_spawner: Arc::new(TokioTaskSpawner),
+                credential_store: Arc::new(crate::credentials::InMemoryCredentialStore::default()),
+                services: crate::domains::BackendServices::unsupported(),
+                local_asr_runtime: None,
+                marketplace_config: None,
+                selection_runtime: None,
+                selection_polisher: None,
+                qa_runtime: None,
+            },
+        )
+        .unwrap();
+        backend.start().await.unwrap();
+
+        backend.start_dictation().await.unwrap();
+        let result = backend.stop_dictation().await.unwrap();
+
+        assert_eq!(result.polished_text, "raw fallback");
+        let history = backend.list_history().unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].error_code, None);
+        assert_eq!(history[0].polish_ms, None);
+
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn short_polish_history_matches_the_executed_path() {
+        #[derive(Clone, Copy)]
+        struct Case {
+            raw: &'static str,
+            threshold: u32,
+            translation: bool,
+            insert_failed: bool,
+            correction: Option<(&'static str, &'static str)>,
+            polish_failed: bool,
+            uses_polisher: bool,
+        }
+        let short = Case {
+            raw: "确定",
+            threshold: 8,
+            translation: false,
+            insert_failed: false,
+            correction: None,
+            polish_failed: false,
+            uses_polisher: false,
+        };
+        let long = "确定重试确定重试好";
+        let cases = [
+            ("short", short),
+            (
+                "insert-failed",
+                Case {
+                    insert_failed: true,
+                    ..short
+                },
+            ),
+            (
+                "long",
+                Case {
+                    raw: long,
+                    uses_polisher: true,
+                    ..short
+                },
+            ),
+            (
+                "disabled",
+                Case {
+                    threshold: 0,
+                    uses_polisher: true,
+                    ..short
+                },
+            ),
+            (
+                "translation",
+                Case {
+                    translation: true,
+                    uses_polisher: true,
+                    ..short
+                },
+            ),
+            (
+                "expanded",
+                Case {
+                    correction: Some(("确定", long)),
+                    uses_polisher: true,
+                    ..short
+                },
+            ),
+            (
+                "shortened",
+                Case {
+                    raw: long,
+                    correction: Some((long, "确定")),
+                    ..short
+                },
+            ),
+            (
+                "polish-failed",
+                Case {
+                    raw: long,
+                    polish_failed: true,
+                    uses_polisher: true,
+                    ..short
+                },
+            ),
+        ];
+        for (name, case) in cases {
+            let data_dir = TestDataDir::new(name);
+            let polisher = Arc::new(if case.polish_failed {
+                crate::testing::FixtureTextPolisher::failing(BackendError::new(
+                    BackendErrorCode::Provider,
+                    "fixture polish failure",
+                ))
+            } else {
+                crate::testing::FixtureTextPolisher::successful("polished text")
+            });
+            let engine = crate::PipelineDictationEngine::new(
+                Arc::new(crate::testing::FixtureAudioRecorder::new(
+                    vec![vec![1, 0, 2, 0]],
+                    vec![(25, 0.5)],
+                )),
+                Arc::new(crate::testing::FixtureTranscriptionEngine::successful(
+                    case.raw, 25,
+                )),
+                polisher.clone(),
+            );
+            let mut backend =
+                backend_with_dictation_engine(data_dir.path().to_path_buf(), Arc::new(engine));
+            if case.insert_failed {
+                backend.deps.text_inserter =
+                    Arc::new(crate::testing::FixtureTextInserter::failing(
+                        BackendError::new(BackendErrorCode::Platform, "fixture insert failure"),
+                    ));
+            }
+            backend
+                .set_credential(
+                    CredentialKey::new(
+                        crate::credentials::CredentialNamespace::Llm,
+                        Some("ark".to_string()),
+                        crate::credentials::LLM_MODEL_ACCOUNT,
+                    )
+                    .unwrap(),
+                    SecretValue::new("fixture-model"),
+                )
+                .await
+                .unwrap();
+            let mut preferences = backend.get_preferences();
+            preferences.polish_skip_max_chars = case.threshold;
+            preferences.streaming_insert = false;
+            preferences.translation_target_language = "English".to_string();
+            preferences.working_languages = vec!["简体中文".to_string(), "English".to_string()];
+            backend.set_preferences(preferences).unwrap();
+            if let Some((from, to)) = case.correction {
+                backend
+                    .add_correction_rule(from.to_string(), to.to_string())
+                    .unwrap();
+            }
+            backend.start().await.unwrap();
+            backend
+                .activate_style_pack(crate::style_packs::BUILTIN_STYLE_PACK_LIGHT_ID)
+                .unwrap();
+            backend
+                .start_dictation_with_options(DictationStartOptions {
+                    translation_requested: case.translation,
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            let result = backend.stop_dictation().await;
+            assert_eq!(result.is_err(), case.insert_failed, "{name}");
+            let history = backend.list_history().unwrap();
+            assert_eq!(history.len(), 1, "{name}");
+            let entry = &history[0];
+            assert_eq!(
+                polisher.inputs().len(),
+                if case.uses_polisher { 1 } else { 0 },
+                "{name}"
+            );
+            assert_eq!(
+                entry.llm_provider.as_deref(),
+                case.uses_polisher.then_some("ark"),
+                "{name}"
+            );
+            assert_eq!(
+                entry.llm_model.as_deref(),
+                case.uses_polisher.then_some("fixture-model"),
+                "{name}"
+            );
+            assert_eq!(entry.polish_ms.is_some(), case.uses_polisher, "{name}");
+            assert_eq!(entry.mode, crate::types::PolishMode::Light, "{name}");
+            assert_eq!(entry.translation_active, case.translation, "{name}");
+            let expected_error = if case.insert_failed {
+                Some("insertFailed")
+            } else if case.polish_failed {
+                Some("polishFailed")
+            } else {
+                None
+            };
+            assert_eq!(entry.error_code.as_deref(), expected_error, "{name}");
+            if !case.uses_polisher {
+                assert_eq!(
+                    entry.final_text,
+                    case.correction.map_or(case.raw, |(_, to)| to),
+                    "{name}"
+                );
+            }
+        }
     }
 
     #[tokio::test]
@@ -13168,7 +13460,7 @@ mod tests {
                 text_inserter: Arc::new(inserter.clone()),
                 dictation_engine: Arc::new(engine),
                 task_spawner: Arc::new(TokioTaskSpawner),
-                credential_store: Arc::new(crate::credentials::InMemoryCredentialStore::default()),
+                credential_store: llm_configured_credentials(),
                 services: crate::domains::BackendServices::unsupported(),
                 local_asr_runtime: None,
                 marketplace_config: None,
@@ -13318,7 +13610,7 @@ mod tests {
         let host = Arc::new(FakeHost::default());
         let mut deps = BackendDependencies::unsupported();
         deps.host_actions = host.clone();
-        deps.credential_store = Arc::new(crate::credentials::InMemoryCredentialStore::default());
+        deps.credential_store = llm_configured_credentials();
         deps.text_inserter = Arc::new(BlockingInserter(Arc::new(BlockingInsertion {
             actions: Arc::clone(&actions),
             started: Arc::clone(&started),
@@ -13522,7 +13814,7 @@ mod tests {
                 text_inserter: Arc::new(inserter.clone()),
                 dictation_engine: Arc::new(engine),
                 task_spawner: Arc::new(TokioTaskSpawner),
-                credential_store: Arc::new(crate::credentials::InMemoryCredentialStore::default()),
+                credential_store: llm_configured_credentials(),
                 services: crate::domains::BackendServices::unsupported(),
                 local_asr_runtime: None,
                 marketplace_config: None,

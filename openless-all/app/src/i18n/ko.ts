@@ -1530,6 +1530,9 @@ export const ko: typeof zhCN = {
         '보관 기간을 초과한 기록은 새 항목 작성 시 정리됩니다. 0 = 시간 기반 정리 비활성화.',
       historyMaxEntriesLabel: '기록 개수 상한',
       historyMaxEntriesDesc: '로컬 보관 세션 상한. 빈칸 = 200. 범위 5–200.',
+      polishSkipMaxCharsLabel: '짧은 입력은 다듬기 건너뛰기(최대 글자 수)',
+      polishSkipMaxCharsDesc:
+        '공백을 제외하고 N자 이하의 인식 결과는 LLM 호출 없이 원문 그대로 삽입합니다. 0 = 끔. 번역은 항상 다듬습니다.',
       polishContextWindowLabel: '대화 컨텍스트 윈도(분)',
       polishContextWindowDesc:
         '최근 N 분간 정리된 전사를 멀티턴 컨텍스트로 전달합니다. 0 = 비활성화.',

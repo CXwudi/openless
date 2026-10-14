@@ -1311,6 +1311,65 @@ async fn run_cloud_polish(
     Ok(output)
 }
 
+/// Whether the LLM channel a session would polish through is configured enough
+/// to send a request (issue #1032). Mirrors the checks in
+/// `build_cloud_polisher_provider` without constructing a provider. A failed
+/// credential read counts as configured so the existing error path still runs.
+pub(crate) async fn llm_channel_configured(
+    credentials: &dyn CredentialStore,
+    channel_id: &str,
+    provider_type: &str,
+    model: Option<&str>,
+) -> bool {
+    let channel_id = channel_id.trim();
+    let provider_type = provider_type.trim();
+    if channel_id.is_empty() || provider_type.is_empty() {
+        return false;
+    }
+    let has_model = model.map(str::trim).is_some_and(|value| !value.is_empty())
+        || default_llm_model(provider_type).is_some();
+    if !has_model {
+        return false;
+    }
+    if provider_type == crate::polish::CODEX_OAUTH_PROVIDER_ID {
+        return true;
+    }
+    let Ok(api_key) = read_channel_credential(
+        credentials,
+        CredentialNamespace::Llm,
+        channel_id,
+        LLM_API_KEY_ACCOUNT,
+    )
+    .await
+    else {
+        return true;
+    };
+    let Ok(endpoint) = read_channel_credential(
+        credentials,
+        CredentialNamespace::Llm,
+        channel_id,
+        LLM_ENDPOINT_ACCOUNT,
+    )
+    .await
+    else {
+        return true;
+    };
+    let api_key_blank = api_key.is_none_or(|value| value.trim().is_empty());
+    if api_key_blank
+        && crate::provider_rules::api_key_required(
+            crate::ProviderKind::Llm,
+            provider_type,
+            endpoint.as_deref(),
+        )
+    {
+        return false;
+    }
+    endpoint
+        .and_then(non_blank_owned)
+        .or_else(|| default_llm_endpoint(provider_type).map(str::to_string))
+        .is_some()
+}
+
 async fn build_cloud_polisher_provider(
     credentials: &dyn CredentialStore,
     context: &DictationContext,
@@ -2952,6 +3011,35 @@ mod tests {
             Err(error) => assert_eq!(error.message, "LLM model is not configured"),
             Ok(_) => panic!("LM Studio must not generate without a selected model"),
         }
+    }
+
+    #[tokio::test]
+    async fn llm_channel_configured_matches_polisher_requirements() {
+        let store = InMemoryCredentialStore::default();
+        // Keyed provider with defaults: unconfigured until an API key is saved (issue #1032).
+        assert!(!llm_channel_configured(&store, "ark", "ark", None).await);
+        write_channel_secret(
+            &store,
+            CredentialNamespace::Llm,
+            "ark",
+            LLM_API_KEY_ACCOUNT,
+            "fixture-key",
+        )
+        .await;
+        assert!(llm_channel_configured(&store, "ark", "ark", None).await);
+
+        // Keyless local provider: configured once a model is selected, matching the builder.
+        assert!(
+            !llm_channel_configured(&store, "lmstudio-channel", "lmstudio", None).await,
+            "LM Studio without a model is unconfigured"
+        );
+        assert!(
+            llm_channel_configured(&store, "lmstudio-channel", "lmstudio", Some("local-model"))
+                .await
+        );
+
+        // Empty identifiers are never configured.
+        assert!(!llm_channel_configured(&store, "", "ark", None).await);
     }
 
     #[tokio::test]

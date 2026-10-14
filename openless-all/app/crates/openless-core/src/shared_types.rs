@@ -709,6 +709,13 @@ pub struct UserPreferences {
     /// Default 5 minutes.
     #[serde(default = "default_polish_context_window_minutes")]
     pub polish_context_window_minutes: u32,
+    /// Skip LLM polish for dictations whose transcript has at most N
+    /// non-whitespace characters (issue #1032). Short fragments are inserted
+    /// as the raw ASR text, avoiding a polish round-trip that costs far more
+    /// than the transcription itself. 0 = off (default). Translation sessions
+    /// always polish regardless of this value.
+    #[serde(default = "default_polish_skip_max_chars")]
+    pub polish_skip_max_chars: u32,
     /// Start silently (no main window). Common for login-launch users who
     /// want the tray rather than a popped-up window. When on, every launch
     /// path skips the window (manual clicks included); users reach the main
@@ -893,6 +900,10 @@ fn default_history_retention_days() -> u32 {
 
 fn default_polish_context_window_minutes() -> u32 {
     5
+}
+
+fn default_polish_skip_max_chars() -> u32 {
+    0
 }
 
 fn default_local_asr_mirror() -> String {
@@ -1091,6 +1102,8 @@ struct UserPreferencesWire {
     history_retention_days: u32,
     #[serde(default = "default_polish_context_window_minutes")]
     polish_context_window_minutes: u32,
+    #[serde(default = "default_polish_skip_max_chars")]
+    polish_skip_max_chars: u32,
     #[serde(default)]
     start_minimized: bool,
     #[serde(default)]
@@ -1280,6 +1293,7 @@ impl Default for UserPreferencesWire {
             update_channel_explicit: None,
             history_retention_days: prefs.history_retention_days,
             polish_context_window_minutes: prefs.polish_context_window_minutes,
+            polish_skip_max_chars: prefs.polish_skip_max_chars,
             start_minimized: prefs.start_minimized,
             theme_mode: prefs.theme_mode,
             streaming_insert: prefs.streaming_insert,
@@ -1493,6 +1507,7 @@ impl<'de> Deserialize<'de> for UserPreferences {
             update_channel_explicit,
             history_retention_days: wire.history_retention_days,
             polish_context_window_minutes: wire.polish_context_window_minutes,
+            polish_skip_max_chars: wire.polish_skip_max_chars,
             start_minimized: wire.start_minimized,
             theme_mode: wire.theme_mode,
             streaming_insert,
@@ -1854,6 +1869,7 @@ impl Default for UserPreferences {
             update_channel_explicit: false,
             history_retention_days: default_history_retention_days(),
             polish_context_window_minutes: default_polish_context_window_minutes(),
+            polish_skip_max_chars: default_polish_skip_max_chars(),
             start_minimized: false,
             theme_mode: ThemeMode::default(),
             streaming_insert: true,
@@ -3440,6 +3456,20 @@ mod tests {
 
         let from_empty: UserPreferences = serde_json::from_str("{}").unwrap();
         assert_eq!(from_empty.paste_shortcut, PasteShortcut::CtrlV);
+    }
+
+    #[test]
+    fn polish_skip_max_chars_defaults_off_and_round_trips() {
+        // Issue #1032: the short-input polish skip is opt-in, so existing users keep polishing.
+        assert_eq!(UserPreferences::default().polish_skip_max_chars, 0);
+        let from_empty: UserPreferences = serde_json::from_str("{}").unwrap();
+        assert_eq!(from_empty.polish_skip_max_chars, 0);
+
+        let configured: UserPreferences =
+            serde_json::from_str(r#"{"polishSkipMaxChars":8}"#).unwrap();
+        assert_eq!(configured.polish_skip_max_chars, 8);
+        let saved = serde_json::to_value(&configured).unwrap();
+        assert_eq!(saved["polishSkipMaxChars"], 8);
     }
 
     /// issue #440: old versions wrote the default `streamingInsert:false`

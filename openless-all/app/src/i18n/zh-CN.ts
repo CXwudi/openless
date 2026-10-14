@@ -1477,6 +1477,9 @@ export const zhCN = {
       historyRetentionDesc: '超过保留天数的历史在写入新条目时被清理；0 = 不按时间清理。',
       historyMaxEntriesLabel: '历史条数上限',
       historyMaxEntriesDesc: '本地保留会话上限，留空 = 200。范围 5–200。',
+      polishSkipMaxCharsLabel: '短句跳过润色（最大字数）',
+      polishSkipMaxCharsDesc:
+        '转写不超过 N 个字（不计空白）时直接插入原文，不调用润色模型。0 = 关闭。翻译模式始终润色。',
       polishContextWindowLabel: '对话上下文窗口（分钟）',
       polishContextWindowDesc: '把最近 N 分钟内已润色的转写作为多轮上下文，0 = 关闭。',
       recordAudioForDebugLabel: '保留原始录音（调试）',

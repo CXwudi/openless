@@ -635,6 +635,13 @@ pub const PREFERENCE_FIELDS: &[PreferenceField] = &[
         reason: "portable_setting",
     },
     PreferenceField {
+        rust_name: "polish_skip_max_chars",
+        key: "polishSkipMaxChars",
+        class: PreferenceClass::Portable,
+        shape: PreferenceShape::Unsigned32,
+        reason: "portable_setting",
+    },
+    PreferenceField {
         rust_name: "start_minimized",
         key: "startMinimized",
         class: PreferenceClass::Portable,

@@ -1598,6 +1598,9 @@ export const fr: typeof zhCN = {
       historyMaxEntriesLabel: 'Nombre maximal d’entrées',
       historyMaxEntriesDesc:
         'Nombre maximal de sessions conservées localement. Vide = 200. Plage : 5–200.',
+      polishSkipMaxCharsLabel: 'Ignorer l’amélioration pour les courtes dictées (caractères max)',
+      polishSkipMaxCharsDesc:
+        'Les transcriptions d’au plus N caractères (espaces non comptés) sont insérées telles quelles, sans appel au LLM. 0 = désactivé. La traduction est toujours améliorée.',
       polishContextWindowLabel: 'Fenêtre de contexte d’amélioration (minutes)',
       polishContextWindowDesc:
         'Utilise les transcriptions améliorées des N dernières minutes comme contexte de plusieurs interventions. 0 = désactivé.',

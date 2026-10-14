@@ -118,6 +118,7 @@ export let mockSettings: UserPreferences = {
   sherpaOnnxKeepLoadedSecs: 300,
   historyRetentionDays: 7,
   polishContextWindowMinutes: 5,
+  polishSkipMaxChars: 0,
   startMinimized: false,
   themeMode: 'system',
   updateChannel: 'stable',

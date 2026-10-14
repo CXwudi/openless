@@ -1554,6 +1554,9 @@ export const en: typeof zhCN = {
         'Entries older than this are pruned on new writes; 0 = no time-based pruning.',
       historyMaxEntriesLabel: 'Max history entries',
       historyMaxEntriesDesc: 'Max sessions retained locally. Blank = 200. Range 5–200.',
+      polishSkipMaxCharsLabel: 'Skip polish for short dictations (max characters)',
+      polishSkipMaxCharsDesc:
+        'Transcripts with at most N characters (spaces not counted) are inserted as raw text without calling the LLM. 0 = off. Translation always polishes.',
       polishContextWindowLabel: 'Polish context window (minutes)',
       polishContextWindowDesc:
         'Use the last N minutes of polished transcripts as multi-turn context; 0 = disabled.',

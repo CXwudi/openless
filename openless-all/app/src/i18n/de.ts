@@ -1585,6 +1585,9 @@ export const de: typeof zhCN = {
         'Ältere Einträge werden beim Speichern neuer Einträge entfernt. 0 = keine zeitabhängige Bereinigung.',
       historyMaxEntriesLabel: 'Maximale Verlaufseinträge',
       historyMaxEntriesDesc: 'Maximal lokal gespeicherte Sitzungen. Leer = 200. Bereich: 5–200.',
+      polishSkipMaxCharsLabel: 'Überarbeitung bei kurzen Eingaben überspringen (max. Zeichen)',
+      polishSkipMaxCharsDesc:
+        'Transkripte mit höchstens N Zeichen (ohne Leerzeichen) werden ohne LLM-Aufruf als Rohtext eingefügt. 0 = aus. Übersetzungen werden immer überarbeitet.',
       polishContextWindowLabel: 'Kontextfenster für Überarbeitung (Minuten)',
       polishContextWindowDesc:
         'Verwendet überarbeitete Transkripte der letzten N Minuten als Gesprächskontext. 0 = deaktiviert.',

@@ -723,7 +723,9 @@ impl DictationEngine for PipelineDictationEngine {
                     is_final: true,
                 }),
             )?;
-            let uses_polisher = context.uses_llm_polisher();
+            // Issue #1032: short transcripts skip polish (user-configured threshold).
+            let uses_polisher = context.uses_llm_polisher()
+                && !context.skips_polish_for_short_text(&transcript.text);
             let (polish_output, polish_failed, polish_ms) = if uses_polisher {
                 publish_progress(
                     &session,
@@ -2777,6 +2779,67 @@ mod tests {
             .unwrap();
         assert_eq!(result.raw_text, "raw text");
         assert_eq!(result.polished_text, "raw text");
+    }
+
+    #[tokio::test]
+    async fn short_transcript_under_threshold_skips_polish() {
+        // Issue #1032: "raw text" has 7 non-whitespace characters, within a limit of 8.
+        let fixture = fixture_engine(
+            false,
+            Ok(crate::ports::PolishOutput::text("polished text")),
+            None,
+            None,
+        );
+        let mut context = DictationContext::default();
+        context.polish.polish_skip_max_chars = 8;
+        let session_id = SessionId::new();
+        fixture
+            .engine
+            .start(
+                session_id,
+                Arc::new(context),
+                fixture.progress.clone(),
+            )
+            .await
+            .unwrap();
+        let result = fixture
+            .engine
+            .finish(session_id, fixture.progress.clone())
+            .await
+            .unwrap();
+        assert_eq!(fixture.polish_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(result.polished_text, "raw text");
+        assert!(!result.polish_failed);
+    }
+
+    #[tokio::test]
+    async fn transcript_over_threshold_still_polishes() {
+        let fixture = fixture_engine(
+            false,
+            Ok(crate::ports::PolishOutput::text("polished text")),
+            None,
+            None,
+        );
+        let mut context = DictationContext::default();
+        // "raw text" has 7 non-whitespace characters, above a limit of 6.
+        context.polish.polish_skip_max_chars = 6;
+        let session_id = SessionId::new();
+        fixture
+            .engine
+            .start(
+                session_id,
+                Arc::new(context),
+                fixture.progress.clone(),
+            )
+            .await
+            .unwrap();
+        let result = fixture
+            .engine
+            .finish(session_id, fixture.progress.clone())
+            .await
+            .unwrap();
+        assert_eq!(fixture.polish_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(result.polished_text, "polished text");
     }
 
     #[tokio::test]

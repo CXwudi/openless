@@ -910,6 +910,19 @@ pub struct InMemoryCredentialStore {
     metadata: RwLock<CredentialMetadata>,
 }
 
+#[cfg(test)]
+impl InMemoryCredentialStore {
+    /// Seed one secret synchronously for test fixtures (issue #1032 tests need a
+    /// configured LLM channel without an async write).
+    pub fn with_secret(self, key: CredentialKey, value: SecretValue) -> Self {
+        self.values
+            .write()
+            .expect("credential values lock poisoned")
+            .insert(key, value);
+        self
+    }
+}
+
 impl InMemoryCredentialStore {
     pub fn set_status(&self, status: CredentialsStatus) {
         *self
