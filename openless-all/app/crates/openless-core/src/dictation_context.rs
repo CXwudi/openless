@@ -3,6 +3,7 @@
 //! Hosts and provider adapters receive this snapshot instead of re-reading
 //! mutable preferences while recording, transcribing, polishing or inserting.
 
+use crate::audio::AudioProcessingConfig;
 use crate::shared_types::{
     AndroidInsertStrategy, ChineseScriptPreference, MacosNewlineMode, OutputLanguagePreference,
     PasteShortcut, PipelineMode, UserPreferences, WindowsInsertionMode,
@@ -184,6 +185,7 @@ pub struct RecordingPlan {
     pub retention_days: u32,
     pub max_entries: Option<u32>,
     pub silence_after_ms: Option<u64>,
+    pub audio_processing: AudioProcessingConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -316,6 +318,9 @@ impl DictationContext {
                 silence_after_ms: (preferences.silence_auto_stop_enabled
                     && preferences.hotkey.mode == crate::shared_types::HotkeyMode::Toggle)
                     .then(|| (preferences.silence_auto_stop_seconds * 1_000.0).round() as u64),
+                audio_processing: AudioProcessingConfig {
+                    enhancement_enabled: preferences.audio_enhancement_enabled,
+                },
             },
             pipeline_mode: crate::shared_types::effective_pipeline_mode(
                 preferences.multimodal_pipeline_enabled,
@@ -709,6 +714,7 @@ mod tests {
             active_llm_provider: "openai".to_string(),
             local_asr_active_model: "qwen3-asr-1.7b".to_string(),
             stable_transcription_enabled: true,
+            audio_enhancement_enabled: true,
             history_max_entries: Some(100),
             audio_recording_max_entries: Some(7),
             working_languages: vec!["简体中文".to_string(), "English".to_string()],
@@ -742,6 +748,7 @@ mod tests {
         );
         assert_eq!(context.asr.provider_id, "local-qwen3");
         assert!(context.recording.transcribe_after_stop);
+        assert!(context.recording.audio_processing.enhancement_enabled);
         assert_eq!(context.asr.model.as_deref(), Some("qwen3-asr-1.7b"));
         // Audio archives have their own user-visible limit. History retention
         // may be much larger and must not silently override the recording cap.

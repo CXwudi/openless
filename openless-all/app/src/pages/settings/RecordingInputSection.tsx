@@ -165,6 +165,8 @@ export function RecordingInputSection() {
   const onAudioCueChange = (audioCueOnRecord: boolean) => savePrefs({ ...prefs, audioCueOnRecord });
   const onLowLatencyDictationChange = (lowLatencyDictationEnabled: boolean) =>
     savePrefs({ ...prefs, lowLatencyDictationEnabled });
+  const onAudioEnhancementChange = (audioEnhancementEnabled: boolean) =>
+    savePrefs({ ...prefs, audioEnhancementEnabled });
   const onMicrophoneDeviceChange = (microphoneDeviceName: string) =>
     savePrefs({ ...prefs, microphoneDeviceName });
   const onRestoreClipboardChange = (restoreClipboardAfterPaste: boolean) =>
@@ -442,6 +444,17 @@ export function RecordingInputSection() {
             )}
           </div>
         </SettingRow>
+        {!isAndroid && (
+          <SettingRow
+            label={t('settings.recording.audioEnhancementLabel')}
+            desc={t('settings.recording.audioEnhancementDesc')}
+          >
+            <Toggle
+              on={prefs.audioEnhancementEnabled}
+              onToggle={onAudioEnhancementChange}
+            />
+          </SettingRow>
+        )}
         {!isAndroid && (
           <SettingRow
             label={t('settings.recording.capsuleLabel')}

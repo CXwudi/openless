@@ -2093,6 +2093,16 @@ pub const CATALOG: &[Msg] = &[
         text: row("切换式", "切換式", "Toggle", "トグル式", "토글 방식"),
     },
     Msg {
+        key: "settings.recording.audio_enhancement_label",
+        text: row(
+            "轻量麦克风增强",
+            "輕量麥克風增強",
+            "Lightweight microphone enhancement",
+            "軽量マイク拡張",
+            "가벼운 마이크 향상",
+        ),
+    },
+    Msg {
         key: "settings.recording.mute_during_recording_label",
         text: row(
             "录音时静音",
@@ -3951,6 +3961,16 @@ pub const CATALOG: &[Msg] = &[
             "Temporarily mute system output during voice input to avoid speaker echo.",
             "録音中にシステム出力を一時的にミュートし、スピーカーのエコーを防ぎます。",
             "녹음 중 시스템 출력을 일시적으로 음소거하여 스피커 에코를 방지합니다.",
+        ),
+    },
+    Msg {
+        key: "settings.recording.audio_enhancement_desc",
+        text: row(
+            "对本机麦克风应用轻量降噪、增益与软限幅，不包含回声消除。默认关闭。",
+            "對本機麥克風套用輕量降噪、增益與軟限幅，不包含回聲消除。預設關閉。",
+            "Applies light gain, soft limiting, and conservative noise suppression to the local microphone. It does not include echo cancellation. Off by default.",
+            "ローカルマイクに軽いノイズ抑制、ゲイン、ソフトリミッターを適用します。エコーキャンセルは含みません。既定ではオフです。",
+            "로컬 마이크에 가벼운 소음 억제, 게인과 소프트 리미터를 적용합니다. 에코 제거는 포함하지 않으며 기본값은 꺼짐입니다.",
         ),
     },
         Msg {

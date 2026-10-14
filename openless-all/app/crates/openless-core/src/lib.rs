@@ -218,7 +218,10 @@ pub use api::{
     LessComputerVoiceOptions, LessComputerVoiceSession, OpenLessBackend, QaVoiceCaptureResult,
     QaVoiceCaptureSession, StartupSnapshot, VoiceTranscriptionSession,
 };
-pub use audio::{encode_dictation_wav, NormalizedPcmChunk, PcmNormalizer, DICTATION_SAMPLE_RATE};
+pub use audio::{
+    encode_dictation_wav, AudioEnhancer, AudioProcessingConfig, AudioProcessor, NormalizedPcmChunk,
+    PcmNormalizer, DICTATION_SAMPLE_RATE,
+};
 pub use auxiliary::{
     AsrCallLabel, AuxiliaryApi, RepolishRequest, RetranscriptionFailure, RetranscriptionResult,
 };

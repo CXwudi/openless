@@ -131,6 +131,9 @@ pub(crate) fn backend_dependencies(
             prefs.low_latency_dictation_enabled,
             (!prefs.microphone_device_name.trim().is_empty())
                 .then(|| prefs.microphone_device_name.clone()),
+            openless_core::AudioProcessingConfig {
+                enhancement_enabled: prefs.audio_enhancement_enabled,
+            },
         );
     }
     let local_asr_runtime = Arc::new(TauriLocalAsrRuntimeAdapter::new(
@@ -2487,6 +2490,7 @@ impl TauriStagedCapture {
         consumer: Arc<dyn LegacyAudioConsumer>,
         level_handler: Arc<dyn Fn(f32) + Send + Sync>,
         archive_path: Option<PathBuf>,
+        processing: openless_core::AudioProcessingConfig,
     ) -> Result<TauriCommittedCapture, RecorderError> {
         match self {
             Self::Cold(staged) => {
@@ -2521,15 +2525,17 @@ impl TauriStagedCapture {
                     {
                         fallback_hub.begin_cold_capture()?;
                         fallback_hub.suspend_for_cold_capture();
-                        let cold =
-                            match Recorder::start_staged(fallback_device, STAGED_CAPTURE_MAX_BYTES)
-                            {
-                                Ok(cold) => cold,
-                                Err(error) => {
-                                    fallback_hub.end_cold_capture();
-                                    return Err(error);
-                                }
-                            };
+                        let cold = match Recorder::start_staged_with_processing(
+                            fallback_device,
+                            STAGED_CAPTURE_MAX_BYTES,
+                            processing,
+                        ) {
+                            Ok(cold) => cold,
+                            Err(error) => {
+                                fallback_hub.end_cold_capture();
+                                return Err(error);
+                            }
+                        };
                         let (recorder, runtime_errors, archive_active) = match cold.commit(
                             fallback_consumer,
                             fallback_level_handler,
@@ -2653,7 +2659,12 @@ impl PendingAudioCapture for TauriPendingAudioCapture {
                 let committed = {
                     let commit = || {
                         staged
-                            .commit(consumer, level_handler, archive_path.clone())
+                            .commit(
+                                consumer,
+                                level_handler,
+                                archive_path.clone(),
+                                recording_plan.audio_processing,
+                            )
                             .map_err(map_recorder_error)
                     };
                     #[cfg(not(mobile))]
@@ -3040,10 +3051,11 @@ impl TauriAudioRecorder {
     ) -> Result<Box<dyn PendingAudioCapture>, BackendError> {
         self.warm_hub.end_preview();
         if request.low_latency {
-            if let Ok(staged) = self
-                .warm_hub
-                .arm(request.press_id, request.microphone_device_name.clone())
-            {
+            if let Ok(staged) = self.warm_hub.arm(
+                request.press_id,
+                request.microphone_device_name.clone(),
+                request.audio_processing,
+            ) {
                 return Ok(Box::new(TauriPendingAudioCapture {
                     app: Arc::clone(&self.app),
                     backend: Arc::clone(&self.backend),
@@ -3062,8 +3074,11 @@ impl TauriAudioRecorder {
         self.warm_hub
             .begin_cold_capture()
             .map_err(map_recorder_error)?;
-        let staged = match Recorder::start_staged(request.microphone_device_name, max_buffer_bytes)
-        {
+        let staged = match Recorder::start_staged_with_processing(
+            request.microphone_device_name,
+            max_buffer_bytes,
+            request.audio_processing,
+        ) {
             Ok(staged) => staged,
             Err(error) => {
                 self.warm_hub.end_cold_capture();
@@ -3184,8 +3199,13 @@ impl AudioRecorder for TauriAudioRecorder {
                 let consumer: Arc<dyn LegacyAudioConsumer> =
                     Arc::new(AudioConsumerBridge { inner: consumer });
                 let recorder_archive_path = archive_path.clone();
-                let start_result =
-                    Recorder::start(microphone, consumer, level_handler, recorder_archive_path);
+                let start_result = Recorder::start_with_processing(
+                    microphone,
+                    consumer,
+                    level_handler,
+                    recorder_archive_path,
+                    recording_plan.audio_processing,
+                );
                 let (recorder, runtime_errors, archive_active) = match start_result {
                     Ok(started) => started,
                     Err(error) => {

@@ -224,6 +224,9 @@ fn sync_low_latency_capture_preferences(prefs: &UserPreferences) {
         prefs.low_latency_dictation_enabled,
         (!prefs.microphone_device_name.trim().is_empty())
             .then(|| prefs.microphone_device_name.clone()),
+        openless_core::AudioProcessingConfig {
+            enhancement_enabled: prefs.audio_enhancement_enabled,
+        },
     );
 }
 

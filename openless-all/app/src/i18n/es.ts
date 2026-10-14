@@ -1510,6 +1510,8 @@ export const es: typeof zhCN = {
       lowLatencyDictationLabel: 'Captura de baja latencia',
       lowLatencyDictationDesc:
         'Mantén preparado el flujo del micrófono y conserva hasta 500 ms en memoria para reducir la pérdida de voz justo después del atajo. El audio no se guarda ni se sube antes de confirmar la grabación; consume más energía y mantiene activo el indicador del micrófono.',
+      audioEnhancementLabel: 'Mejora ligera del micrófono',
+      audioEnhancementDesc: 'Aplica una ganancia ligera, limitación suave y reducción de ruido conservadora al micrófono local. No incluye cancelación de eco. Desactivada de forma predeterminada.',
       muteDuringRecordingLabel: 'Silenciar durante la grabación',
       muteDuringRecordingDesc:
         'Silencia temporalmente el sonido del sistema durante la entrada de voz para evitar el eco de los altavoces.',

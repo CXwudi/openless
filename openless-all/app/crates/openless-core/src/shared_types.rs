@@ -405,6 +405,10 @@ pub struct UserPreferences {
     /// Temporarily mute system output during recording; restore the original mute state on stop/cancel/error.
     #[serde(default)]
     pub mute_during_recording: bool,
+    /// Apply conservative noise suppression, lightweight gain, and a soft limiter to native microphone input.
+    /// Disabled by default until an audio-quality baseline supports changing it.
+    #[serde(default)]
+    pub audio_enhancement_enabled: bool,
     /// Reconnect the current ASR after recording ends and submit the whole PCM. Default off.
     #[serde(default)]
     pub stable_transcription_enabled: bool,
@@ -961,6 +965,8 @@ struct UserPreferencesWire {
     #[serde(default)]
     mute_during_recording: bool,
     #[serde(default)]
+    audio_enhancement_enabled: bool,
+    #[serde(default)]
     stable_transcription_enabled: bool,
     #[serde(default)]
     low_latency_dictation_enabled: bool,
@@ -1218,6 +1224,7 @@ impl Default for UserPreferencesWire {
             capsule_transcript_enabled: prefs.capsule_transcript_enabled,
             capsule_transcript_font_size: prefs.capsule_transcript_font_size,
             mute_during_recording: prefs.mute_during_recording,
+            audio_enhancement_enabled: prefs.audio_enhancement_enabled,
             stable_transcription_enabled: prefs.stable_transcription_enabled,
             low_latency_dictation_enabled: prefs.low_latency_dictation_enabled,
             audio_cue_on_record: prefs.audio_cue_on_record,
@@ -1419,6 +1426,7 @@ impl<'de> Deserialize<'de> for UserPreferences {
             capsule_transcript_enabled: wire.capsule_transcript_enabled,
             capsule_transcript_font_size: wire.capsule_transcript_font_size.clamp(12, 20),
             mute_during_recording: wire.mute_during_recording,
+            audio_enhancement_enabled: wire.audio_enhancement_enabled,
             stable_transcription_enabled: wire.stable_transcription_enabled,
             low_latency_dictation_enabled: wire.low_latency_dictation_enabled,
             audio_cue_on_record: wire.audio_cue_on_record,
@@ -1797,6 +1805,7 @@ impl Default for UserPreferences {
             capsule_transcript_enabled: true,
             capsule_transcript_font_size: default_capsule_transcript_font_size(),
             mute_during_recording: false,
+            audio_enhancement_enabled: false,
             stable_transcription_enabled: false,
             low_latency_dictation_enabled: false,
             audio_cue_on_record: true,
@@ -3251,6 +3260,21 @@ mod tests {
 
         let restored: UserPreferences = serde_json::from_str(&json).unwrap();
         assert!(!restored.audio_cue_on_record);
+    }
+
+    #[test]
+    fn audio_enhancement_defaults_off_and_round_trips_when_enabled() {
+        let legacy: UserPreferences = serde_json::from_str("{}").unwrap();
+        assert!(!legacy.audio_enhancement_enabled);
+
+        let enabled = UserPreferences {
+            audio_enhancement_enabled: true,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&enabled).unwrap();
+        assert!(json.contains("\"audioEnhancementEnabled\":true"));
+        let restored: UserPreferences = serde_json::from_str(&json).unwrap();
+        assert!(restored.audio_enhancement_enabled);
     }
 
     #[test]

@@ -468,6 +468,8 @@ pub enum SettingsField {
     /// 录音胶囊是否显示（Tauri `showCapsule`；Linux 上同样生效）。
     ShowCapsule,
     MuteWhileRecording,
+    /// 轻量本机麦克风增益与软限幅。
+    AudioEnhancement,
     RecordAudioForDebug,
     ActivityHeatmap,
     SystemProxy,
@@ -1058,6 +1060,7 @@ pub struct SettingsFields {
     /// 枚举麦克风失败时的原因（Tauri `microphoneLoadError` 行）。
     pub microphone_error: Option<String>,
     pub mute_while_recording: bool,
+    pub audio_enhancement: bool,
     pub audio_cue: bool,
     /// 录音胶囊开关与样式（Tauri `capsuleLabel` / `capsuleStyleLabel`）。
     pub show_capsule: bool,
@@ -1110,6 +1113,7 @@ impl Default for SettingsFields {
             microphone_options: Vec::new(),
             microphone_error: None,
             mute_while_recording: false,
+            audio_enhancement: false,
             audio_cue: false,
             show_capsule: true,
             capsule_style: 0,

@@ -194,6 +194,9 @@ impl OpenLessEguiApp {
             frontend::view_model::SettingsField::MuteWhileRecording => {
                 preferences.mute_during_recording = !preferences.mute_during_recording;
             }
+            frontend::view_model::SettingsField::AudioEnhancement => {
+                preferences.audio_enhancement_enabled = !preferences.audio_enhancement_enabled;
+            }
             frontend::view_model::SettingsField::RecordAudioForDebug => {
                 preferences.record_audio_for_debug = !preferences.record_audio_for_debug;
             }
