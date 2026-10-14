@@ -61,6 +61,7 @@ const KOTLIN_FILES = [
   'OpenLessContentWriter.kt',
   'OpenLessImeService.kt',
   'ImeLearningPolicy.kt',
+  'DictationSpan.kt',
   'ImePrivacyPolicy.kt',
   'StrokeInputController.kt',
   'StrokeInput.kt',
@@ -83,6 +84,7 @@ const KOTLIN_FILES = [
 
 const KOTLIN_TEST_FILES = [
   'ImeLearningPolicyTest.kt',
+  'DictationSpanTest.kt',
   'ImePrivacyPolicyTest.kt',
   'LatinInputModeTest.kt',
   'OpenLessContentReaderTest.kt',
