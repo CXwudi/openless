@@ -1026,8 +1026,14 @@ impl TextPolisher for SharedCloudTextPolisher {
                     "polish input must not be empty",
                 ));
             }
-            let provider =
+            let mut provider =
                 build_cloud_polisher_provider(credentials.as_ref(), context.as_ref()).await?;
+            if let CloudPolisherProvider::OpenAi(crate::polish::ActiveLLMProvider::OpenAI(
+                provider,
+            )) = &mut provider
+            {
+                provider.set_dictation_session(session_id);
+            }
             tokio::select! {
                 _ = cancellation.cancelled() => Err(cancelled_provider_error()),
                 result = run_cloud_polish(
@@ -2737,6 +2743,7 @@ mod tests {
         context.polish.translation_target_language = "English".into();
         let sink = Arc::new(ObservedTranslationStream::new());
         let session_id = SessionId::new();
+        crate::testing::logging::start();
         let run = polisher.polish(
             session_id,
             Arc::new(context),
@@ -2815,6 +2822,34 @@ mod tests {
                     },
                 ]
             );
+        }
+        if !gemini {
+            let logs = crate::testing::logging::matching(&format!("session_id={session_id} "));
+            let requests: Vec<_> = logs
+                .iter()
+                .filter(|line| line.contains("request_id="))
+                .collect();
+            assert_eq!(requests.len(), if fallback { 2 } else { 1 });
+            let request_ids: std::collections::HashSet<_> = requests
+                .iter()
+                .map(|line| {
+                    line.split_whitespace()
+                        .find(|field| field.starts_with("request_id="))
+                        .unwrap()
+                })
+                .collect();
+            assert_eq!(request_ids.len(), requests.len());
+            if !cancel {
+                for request_id in request_ids {
+                    let records = crate::testing::logging::matching(request_id);
+                    assert!(records
+                        .iter()
+                        .any(|line| line.contains("[llm] stream done")));
+                    assert!(!records
+                        .iter()
+                        .any(|line| line.contains("原始语音") || line.contains("Hello 🌍")));
+                }
+            }
         }
     }
 

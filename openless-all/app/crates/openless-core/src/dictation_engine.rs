@@ -699,6 +699,16 @@ impl DictationEngine for PipelineDictationEngine {
                 &transcript.text,
                 &context.correction_rules,
             );
+            log::info!(
+                "[asr-diagnostics] session_id={} asr_chars={} asr_hash={} asr_near_duplicates={} corrected_chars={} corrected_hash={} corrected_near_duplicates={}",
+                session_id,
+                original_asr_text.chars().count(),
+                crate::output_cleaning::privacy_text_hash(&original_asr_text),
+                crate::output_cleaning::find_adjacent_near_duplicates(&original_asr_text).len(),
+                transcript.text.chars().count(),
+                crate::output_cleaning::privacy_text_hash(&transcript.text),
+                crate::output_cleaning::find_adjacent_near_duplicates(&transcript.text).len(),
+            );
             let asr_transcript =
                 (transcript.text != original_asr_text).then_some(original_asr_text);
             if !context.recording.archive_successful_recording {
@@ -816,6 +826,50 @@ impl DictationEngine for PipelineDictationEngine {
                         is_final: true,
                     }),
                 )?;
+            }
+
+            if uses_polisher {
+                let findings =
+                    crate::output_cleaning::find_adjacent_near_duplicates(&polish_output.text);
+                let finding_summary = findings
+                    .iter()
+                    .map(|finding| {
+                        format!(
+                            "{}x{}:{:.4}/{:.4}",
+                            finding.left_chars,
+                            finding.right_chars,
+                            finding.similarity,
+                            finding.length_adjusted_similarity
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                log::info!(
+                    "[polish-diagnostics] session_id={} input_chars={} input_hash={} final_chars={} final_hash={} near_duplicate_count={} near_duplicates={} polish_failed={} provider={} model={}",
+                    session_id,
+                    transcript.text.chars().count(),
+                    crate::output_cleaning::privacy_text_hash(&transcript.text),
+                    polish_output.text.chars().count(),
+                    crate::output_cleaning::privacy_text_hash(&polish_output.text),
+                    findings.len(),
+                    finding_summary,
+                    polish_failed,
+                    polish_output
+                        .llm_call_label
+                        .as_ref()
+                        .map_or("", |label| label.provider.as_str()),
+                    polish_output
+                        .llm_call_label
+                        .as_ref()
+                        .map_or("", |label| label.model.as_str()),
+                );
+                if !findings.is_empty() {
+                    log::warn!(
+                        "[polish-diagnostics] adjacent near-duplicate output detected for session_id={} count={}",
+                        session_id,
+                        findings.len()
+                    );
+                }
             }
 
             remove_session(&sessions, session_id, &session);
@@ -2127,6 +2181,56 @@ mod tests {
             polish_calls,
             polish_contexts,
         }
+    }
+
+    #[tokio::test]
+    async fn asr_diagnostics_distinguish_correction_introduced_repetition() {
+        crate::testing::logging::start();
+        let corrected =
+            "Please submit the final report today. Please submit the final report today.";
+        let fixture = fixture_engine(
+            false,
+            Ok(crate::ports::PolishOutput::text(corrected)),
+            None,
+            None,
+        );
+        let mut context = DictationContext::default();
+        context.correction_rules.push(crate::types::CorrectionRule {
+            id: "diagnostic-fixture".into(),
+            pattern: "raw text".into(),
+            replacement: corrected.into(),
+            enabled: true,
+            created_at: String::new(),
+            source: Default::default(),
+        });
+        let session_id = SessionId::new();
+        fixture
+            .engine
+            .start(session_id, Arc::new(context), fixture.progress.clone())
+            .await
+            .unwrap();
+        let result = fixture
+            .engine
+            .finish(session_id, fixture.progress.clone())
+            .await
+            .unwrap();
+        assert_eq!(result.asr_transcript.as_deref(), Some("raw text"));
+        assert_eq!(result.raw_text, corrected);
+        let logs = crate::testing::logging::matching(&format!(
+            "[asr-diagnostics] session_id={session_id} "
+        ));
+        assert_eq!(logs.len(), 1);
+        assert!(logs[0].contains(&format!(
+            "asr_chars=8 asr_hash={} asr_near_duplicates=0",
+            crate::output_cleaning::privacy_text_hash("raw text")
+        )));
+        assert!(logs[0].contains(&format!(
+            "corrected_chars={} corrected_hash={} corrected_near_duplicates=1",
+            corrected.chars().count(),
+            crate::output_cleaning::privacy_text_hash(corrected)
+        )));
+        assert!(!logs[0].contains("raw text"));
+        assert!(!logs[0].contains("Please submit"));
     }
 
     #[tokio::test]

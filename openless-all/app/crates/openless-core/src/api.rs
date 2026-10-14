@@ -1789,6 +1789,8 @@ type TextInsertionPreparation = futures_util::future::Shared<
 >;
 
 struct ActiveTextInsertion {
+    session_id: SessionId,
+    insert_attempts: AtomicU64,
     platform: Arc<dyn TextInsertionSession>,
     streaming: bool,
     script: crate::shared_types::ChineseScriptPreference,
@@ -1813,6 +1815,7 @@ struct ActiveTextInsertionState {
 
 impl ActiveTextInsertion {
     fn new(
+        session_id: SessionId,
         platform: Arc<dyn TextInsertionSession>,
         context: &DictationContext,
         task_spawner: Arc<dyn TaskSpawner>,
@@ -1823,6 +1826,8 @@ impl ActiveTextInsertion {
                 != crate::shared_types::WindowsInsertionMode::SendInput;
         let platform_streaming = platform.supports_streaming();
         Arc::new(Self {
+            session_id,
+            insert_attempts: AtomicU64::new(0),
             platform,
             streaming: context.uses_llm_polisher()
                 && platform_streaming
@@ -1842,6 +1847,57 @@ impl ActiveTextInsertion {
             cancel_result: std::sync::OnceLock::new(),
             terminal: AtomicU8::new(0),
         })
+    }
+
+    fn begin_insert_attempt(&self, operation: &str, text: &str) -> u64 {
+        let attempt = self.insert_attempts.fetch_add(1, Ordering::Relaxed) + 1;
+        log::info!(
+            "[insert-diagnostics] session_id={} attempt={} operation={} chars={} hash={}",
+            self.session_id,
+            attempt,
+            operation,
+            text.chars().count(),
+            crate::output_cleaning::privacy_text_hash(text),
+        );
+        attempt
+    }
+
+    async fn write_text(
+        &self,
+        text: String,
+        operation: &str,
+    ) -> Result<crate::ports::InsertWriteResult, BackendError> {
+        let attempt = self.begin_insert_attempt(operation, &text);
+        let result = self.platform.write(text).await;
+        log::info!(
+            "[insert-diagnostics] session_id={} attempt={} operation={} result={:?}",
+            self.session_id,
+            attempt,
+            operation,
+            result
+                .as_ref()
+                .map(|written| written.written_chars)
+                .map_err(|error| error.code),
+        );
+        result
+    }
+
+    async fn finish_platform(&self, text: String) -> Result<InsertOutcome, BackendError> {
+        let operation = if text.is_empty() {
+            "finalize"
+        } else {
+            "insert_final"
+        };
+        let attempt = self.begin_insert_attempt(operation, &text);
+        let result = self.platform.finish(text).await;
+        log::info!(
+            "[insert-diagnostics] session_id={} attempt={} operation={} result={:?}",
+            self.session_id,
+            attempt,
+            operation,
+            result.as_ref().map_err(|error| error.code),
+        );
+        result
     }
 
     fn push(self: &Arc<Self>, delta: &crate::types::PolishDelta) {
@@ -1896,7 +1952,7 @@ impl ActiveTextInsertion {
             let result = if delta.is_empty() {
                 Ok(crate::ports::InsertWriteResult { written_chars: 0 })
             } else {
-                self.platform.write(delta.clone()).await
+                self.write_text(delta.clone(), "stream").await
             };
             let mut state = self.state.lock().expect("text insertion lock poisoned");
             match result {
@@ -1977,10 +2033,10 @@ impl ActiveTextInsertion {
             .reconcile_final(&final_text);
         use crate::streaming_insert::FinalReconciliation;
         match reconciliation {
-            FinalReconciliation::InsertFinal(text) => self.platform.finish(text).await,
+            FinalReconciliation::InsertFinal(text) => self.finish_platform(text).await,
             FinalReconciliation::WriteTail(tail) => {
                 let expected = tail.chars().count();
-                let written = self.platform.write(tail).await;
+                let written = self.write_text(tail, "tail").await;
                 let complete = matches!(written, Ok(result) if result.written_chars >= expected);
                 if complete {
                     if self.save_streamed_text_to_clipboard {
@@ -1988,7 +2044,7 @@ impl ActiveTextInsertion {
                             log::warn!("failed to preserve streamed text on clipboard: {error}");
                         }
                     }
-                    self.platform.finish(String::new()).await
+                    self.finish_platform(String::new()).await
                 } else {
                     self.finish_with_fallback(final_text).await
                 }
@@ -1999,7 +2055,7 @@ impl ActiveTextInsertion {
                         log::warn!("failed to preserve streamed text on clipboard: {error}");
                     }
                 }
-                self.platform.finish(String::new()).await
+                self.finish_platform(String::new()).await
             }
             FinalReconciliation::CopyFallback(text) => self.finish_with_fallback(text).await,
         }
@@ -2007,7 +2063,12 @@ impl ActiveTextInsertion {
 
     async fn finish_with_fallback(&self, text: String) -> Result<InsertOutcome, BackendError> {
         let copied = self.platform.copy(text).await;
-        let closed = self.platform.finish(String::new()).await;
+        log::info!(
+            "[insert-diagnostics] session_id={} operation=copy_fallback result={:?}",
+            self.session_id,
+            copied.as_ref().map_err(|error| error.code),
+        );
+        let closed = self.finish_platform(String::new()).await;
         copied?;
         closed?;
         Ok(InsertOutcome::CopiedFallback)
@@ -2032,6 +2093,12 @@ impl ActiveTextInsertion {
             self.task_spawner.spawn(Box::pin(async move {
                 insertion.wait_for_stream_drain().await;
                 let result = insertion.platform.cancel().await;
+                log::info!(
+                    "[insert-diagnostics] session_id={} operation=cancel attempts={} result={:?}",
+                    insertion.session_id,
+                    insertion.insert_attempts.load(Ordering::Relaxed),
+                    result.as_ref().map_err(|error| error.code),
+                );
                 let _ = insertion.cancel_result.set(result);
                 insertion.terminal.store(4, Ordering::Release);
                 insertion.drained.notify_waiters();
@@ -5935,6 +6002,7 @@ impl OpenLessBackend {
                     .begin(session_id, Arc::clone(&insertion_context))
                     .await?;
                 Ok(ActiveTextInsertion::new(
+                    session_id,
                     platform,
                     &insertion_context,
                     task_spawner,
@@ -6437,6 +6505,12 @@ impl OpenLessBackend {
         }
 
         let insert_outcome = if context.insertion.enabled {
+            log::info!(
+                "[insert-diagnostics] session_id={} phase=finalizing final_chars={} final_hash={}",
+                session_id,
+                engine_result.polished_text.chars().count(),
+                crate::output_cleaning::privacy_text_hash(&engine_result.polished_text),
+            );
             match self
                 .finish_text_insertion(session_id, engine_result.polished_text.clone())
                 .await
@@ -6469,6 +6543,13 @@ impl OpenLessBackend {
         } else {
             None
         };
+        if let Some(outcome) = insert_outcome {
+            log::info!(
+                "[insert-diagnostics] session_id={} phase=completed outcome={:?}",
+                session_id,
+                outcome,
+            );
+        }
         let result = DictationResult {
             session_id,
             raw_text: engine_result.raw_text.clone(),
@@ -13337,6 +13418,7 @@ mod tests {
 
     #[tokio::test]
     async fn insertion_failure_persists_generated_text_and_releases_the_session() {
+        crate::testing::logging::start();
         let data_dir = std::env::temp_dir().join(format!(
             "openless-core-insert-failure-history-{}",
             uuid::Uuid::new_v4().simple()
@@ -13379,6 +13461,16 @@ mod tests {
             .expect_err("insertion must fail");
 
         assert_eq!(error.code, BackendErrorCode::Platform);
+        let logs = crate::testing::logging::matching(&format!(
+            "[insert-diagnostics] session_id={session_id} "
+        ));
+        assert!(logs
+            .iter()
+            .any(|line| line.contains("attempt=1 operation=insert_final result=Err(Platform)")));
+        assert!(!logs
+            .iter()
+            .any(|line| line.contains("generated text")
+                || line.contains("fixture insertion failure")));
         let history = backend.list_history().unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].id, session_id.to_string());
@@ -13558,6 +13650,7 @@ mod tests {
         ending: NativeInsertionEnd,
         translation: bool,
     ) {
+        crate::testing::logging::start();
         struct BlockingInsertion {
             actions: Arc<Mutex<Vec<&'static str>>>,
             started: Arc<tokio::sync::Semaphore>,
@@ -13766,6 +13859,17 @@ mod tests {
             *actions.lock().unwrap(),
             vec!["write started", "write finished", "input source restored"]
         );
+        if streaming {
+            let logs = crate::testing::logging::matching(&format!(
+                "[insert-diagnostics] session_id={session_id} "
+            ));
+            assert!(logs
+                .iter()
+                .any(|line| line.contains("attempt=1 operation=stream result=Ok(")));
+            assert!(logs
+                .iter()
+                .any(|line| line.contains("operation=cancel attempts=1 result=Ok(())")));
+        }
         let next = backend.start_dictation().await.unwrap();
         backend.cancel_dictation(Some(next)).await.unwrap();
     }
@@ -13808,6 +13912,7 @@ mod tests {
 
     #[tokio::test]
     async fn streaming_final_writes_only_the_missing_tail() {
+        crate::testing::logging::start();
         use crate::testing::{FixtureDictationEngine, FixtureInsertionAction, FixtureTextInserter};
 
         let data_dir = TestDataDir::new("streaming-final-tail");
@@ -13866,10 +13971,31 @@ mod tests {
                 },
             ]
         );
+        let logs = crate::testing::logging::matching(&format!(
+            "[insert-diagnostics] session_id={session_id} "
+        ));
+        for operation in [
+            "attempt=1 operation=stream chars=1",
+            "attempt=2 operation=tail chars=1",
+            "attempt=3 operation=finalize chars=0",
+        ] {
+            assert!(
+                logs.iter().any(|line| line.contains(operation)),
+                "missing {operation}: {logs:?}"
+            );
+        }
+        assert_eq!(
+            logs.iter().filter(|line| line.contains(" result=")).count(),
+            3
+        );
+        assert!(!logs
+            .iter()
+            .any(|line| line.contains('你') || line.contains('好')));
     }
 
     #[tokio::test]
     async fn native_streaming_unavailable_keeps_one_final_delivery() {
+        crate::testing::logging::start();
         struct FinalOnlySession(Arc<Mutex<Vec<String>>>);
         impl TextInsertionSession for FinalOnlySession {
             fn supports_streaming(&self) -> bool {
@@ -13908,6 +14034,7 @@ mod tests {
         )
         .unwrap();
         let insertion = ActiveTextInsertion::new(
+            session_id,
             Arc::new(FinalOnlySession(delivered.clone())),
             &context,
             Arc::new(TokioTaskSpawner),
@@ -13923,6 +14050,12 @@ mod tests {
             InsertOutcome::Inserted
         );
         assert_eq!(*delivered.lock().unwrap(), ["final text"]);
+        let logs = crate::testing::logging::matching(&format!(
+            "[insert-diagnostics] session_id={session_id} "
+        ));
+        assert_eq!(logs.len(), 2);
+        assert!(logs[0].contains("attempt=1 operation=insert_final chars=10"));
+        assert!(logs[1].contains("attempt=1 operation=insert_final result=Ok(Inserted)"));
     }
 
     #[tokio::test]
