@@ -29,7 +29,8 @@
 
 - `npm test`（含 build 与前端/契约）通过；新增日期 cask 与双渠道 draft 契约分别通过，Ruby cask 语法检查通过。
 - Core lib：1204 passed、1 条显式 external Codex ignored；`local_asr_contract`：34 passed；独立 backend-tests：46 passed。
-- 全量当前浏览器用例和 Linux 视觉基线由本轮 PR CI 复核，不能沿用旧 HEAD 的绿色状态。任何失败先修复再合并，不提高截图容差或绕过门禁。
+- 本机当前完整 Chromium/WebKit 用例已一次执行 100/100 通过（不带更新截图参数）。首轮 PR CI 中 macOS、MSRV、Android、Linux Core/egui/deb/rpm 已通过；UI 仅四个 Linux 快捷键旧截图失配，功能用例通过。已审查 Ubuntu 实际图并更新四张对应参考；两张独立页面使用 soft 截图断言收集完整失败证据，任一失配仍让 CI 失败。后续以最终 HEAD 全量 CI 为合并门禁，不提高容差。
+- 本机 `brew update` 已成功；官方 tap 已接入，提醒脚本已安装。当前 Homebrew 公开版仍为 1.3.18，未用旧版覆盖已验收修复版。
 - Beta 应用版本规范为 `2.0.0-Beta.6+build.20261015`，tag 为 `v2.0.0-Beta.6-tauri`。日期为该候选准备日期，不改已安装 App。
 - PR 合并、被标记提交的 CI 通过后，先构建/验证/公开 beta6；之后通过 `beta → main` PR 发布 `2.0.0+build.<正式版准备当天 YYYYMMDD>`，tag 保持 `v2.0.0-tauri`，Stable 标记 latest。
 
