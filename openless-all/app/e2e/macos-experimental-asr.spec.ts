@@ -1,0 +1,77 @@
+import { expect, test, type Page } from '@playwright/test';
+
+async function settings(page: Page) {
+  await page.goto('/');
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+}
+async function experiments(page: Page) {
+  await page.getByRole('button', { name: '实验与扩展', exact: true }).click();
+  const entries = page.locator('[data-ol-advanced-entry]');
+  await expect(entries.first()).toHaveAttribute('data-ol-advanced-entry', 'localModels');
+  await entries.first().click();
+}
+
+test('Mac removes legacy manager and exposes lazy experiments first with memory warning', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await settings(page);
+  await page.getByRole('button', { name: 'AI 服务与模型', exact: true }).click();
+  const retired = page.locator('.ol-service-views').getByRole('button', { name: '本地模型', exact: true });
+  await expect(retired).toBeDisabled();
+  await retired.locator('..').hover();
+  await expect(page.getByRole('tooltip')).toHaveText('该功能已下架，请去实验性与扩展里面');
+  await experiments(page);
+  const stream = page.locator('[data-experimental-model="text-stream"]');
+  await expect(page.locator('[data-experimental-model]').first()).toHaveAttribute('data-experimental-model', 'text-stream');
+  await expect(stream).toContainText('推荐 · 实时流式');
+  await expect(stream).toContainText('localhost:7890/stream');
+  const sense = page.locator('[data-experimental-model="sense-voice"]');
+  const gemma = page.locator('[data-experimental-model="embedding-gemma"]');
+  await expect(sense).toContainText('使用本地模型会增加内存占用');
+  await expect(sense).toContainText('开始录音时才加载');
+  await expect(sense.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+  await stream.getByRole('switch').click();
+  await sense.getByRole('switch').click();
+  await gemma.getByRole('switch').click();
+  const guide = page.getByRole('dialog', { name: '下载完成，还需选择语音渠道' });
+  await expect(guide).toBeVisible();
+  await expect(guide).toContainText('下载完成不代表已经替换当前渠道');
+  await guide.getByRole('button', { name: '确定，前往语音渠道' }).click();
+  await expect(page.getByRole('heading', { name: '语音识别渠道', exact: true })).toBeVisible();
+  await expect(page.locator('[data-channel-provider="experimental-sensevoice"]')).toHaveCount(1);
+  await expect(page.locator('[data-channel-provider="experimental-textstream"]')).toHaveCount(1);
+  await expect(page.locator('[data-channel-provider="volcengine"]').first()).toHaveAttribute('data-channel-active', 'true');
+  await experiments(page);
+  await sense.getByRole('switch').click();
+  await expect(sense.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+  await expect(sense.getByRole('button', { name: '删除', exact: true })).toBeVisible();
+  await expect(gemma.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+  expect(errors).toEqual([]);
+});
+
+test('closing settings does not auto-enable a channel or lose completion guidance', async ({ page }) => {
+  await settings(page);
+  await experiments(page);
+  await page.getByRole('switch', { name: 'SenseVoice Small', exact: true }).click();
+  await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: '关闭', exact: true }).click();
+  await page.waitForTimeout(2100);
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  const guide = page.getByRole('dialog', { name: '下载完成，还需选择语音渠道' });
+  await expect(guide).toBeVisible();
+  await guide.getByRole('button', { name: '稍后再说' }).click();
+  await experiments(page);
+  await expect(page.getByRole('switch', { name: 'SenseVoice Small', exact: true })).toHaveAttribute('aria-checked', 'true');
+});
+
+test('Windows retains its model manager and does not expose the Mac experiments entry', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+    Object.defineProperty(navigator, 'userAgent', { get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' });
+    Object.defineProperty(navigator, 'userAgentData', { get: () => ({ platform: 'Windows' }) });
+  });
+  await settings(page);
+  await page.getByRole('button', { name: 'AI 服务与模型', exact: true }).click();
+  await expect(page.locator('.ol-service-views').getByRole('button', { name: '本地模型', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '实验与扩展', exact: true }).click();
+  await expect(page.locator('[data-ol-advanced-entry="localModels"]')).toHaveCount(0);
+});

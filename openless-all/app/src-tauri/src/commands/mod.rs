@@ -55,6 +55,7 @@ mod credentials;
 mod dictation;
 mod dictionary;
 #[cfg(not(mobile))]
+mod experimental_asr;
 mod foundry_asr;
 mod github_oauth;
 mod history;
@@ -87,6 +88,7 @@ pub use credentials::*;
 pub use dictation::*;
 pub use dictionary::*;
 #[cfg(not(mobile))]
+pub use experimental_asr::*;
 pub use foundry_asr::*;
 pub use github_oauth::*;
 pub use history::*;
@@ -345,27 +347,18 @@ mod tests {
             &whisper_keyless_ready
         ));
 
-        #[cfg(target_os = "macos")]
-        {
-            assert!(asr_configured_for_provider(
-                crate::asr::local::PROVIDER_ID,
-                &snapshot()
-            ));
-            assert!(asr_configured_for_provider(
-                crate::asr::local::LOCAL_QWEN3_C_PROVIDER_ID,
-                &snapshot()
-            ));
-        }
-        #[cfg(not(target_os = "macos"))]
-        assert!(!asr_configured_for_provider(
+        // Retired metadata IDs can never count as a configured native runtime.
+        for provider in [
             crate::asr::local::PROVIDER_ID,
-            &snapshot()
-        ));
-        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-        assert!(asr_configured_for_provider(
+            crate::asr::local::LOCAL_QWEN3_C_PROVIDER_ID,
             crate::asr::local::LOCAL_QWEN3_MLX_PROVIDER_ID,
-            &snapshot()
-        ));
+        ] {
+            assert!(!asr_configured_for_provider(provider, &snapshot()));
+        }
+        #[cfg(target_os = "macos")]
+        for provider in ["local-whisper", "apple-whisper", "apple-speech"] {
+            assert!(!asr_configured_for_provider(provider, &snapshot()));
+        }
         #[cfg(target_os = "windows")]
         assert!(asr_configured_for_provider(
             crate::asr::local::foundry::PROVIDER_ID,

@@ -3,7 +3,10 @@
 import type { zhCN } from './zh-CN';
 
 // Type-level guarantee that en mirrors the zh-CN shape.
+import { experimentalAsrEn as experimentalAsr } from './experimentalAsr';
+
 export const en: typeof zhCN = {
+  experimentalAsr,
   voiceEdit: {
     title: 'Voice editing session',
     description:
@@ -1721,6 +1724,9 @@ export const en: typeof zhCN = {
         asrSherpaOnnxLocal: 'Local sherpa-onnx (Experimental)',
         asrFoundryLocalWhisper: 'Local Whisper (Foundry Local)',
         asrLocalWhisper: 'Local Whisper (batch)',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
+        asrExperimentalTextStream: experimentalAsr.textStreamLabel,
         asrLocalQwen3: 'Local Qwen3-ASR',
         asrLocalQwen3Mlx: 'Local Qwen3-ASR (MLX / Metal)',
         asrLocalQwen3C: 'Local Qwen3-ASR (C / CPU)',
@@ -2371,6 +2377,7 @@ export const en: typeof zhCN = {
     autoSaveHint: 'Changes save automatically',
     backToAdvanced: 'Back to Experiments & extensions',
     advancedPages: {
+      localModels: experimentalAsr.description,
       vocabularyLearning:
         'Learn from manual corrections after dictation; configure observation, confirmation time and phrase length.',
       lessComputer: 'Choose an agent and configure its model, permissions, and working directory.',
@@ -2535,7 +2542,10 @@ export const en: typeof zhCN = {
     foundryError: 'Foundry status',
     foundrySetDefault: 'Set default / Enable Windows local ASR',
     foundryEnabling: 'Enabling…',
-    foundryPrepare: 'Prepare / Download / Load',
+    foundryPrepare: 'Download / verify model',
+    runtimeDownloadRestart:
+      'The download used native runtime components. Restart OpenLess before enabling the model; it will not be enabled automatically. Restart now?',
+    restartNow: 'Restart now',
     foundryPreparing: 'Preparing…',
     foundryReleasing: 'Releasing…',
     foundryRetryPrepare: 'Continue / Retry prepare',

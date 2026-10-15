@@ -197,8 +197,29 @@ pub(crate) fn set_backend_preferences_for_test(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    asr::local::run_mlx_worker_if_requested();
+    // Explicit acceptance in a debug bundle bypasses UI, microphone and the
+    // system credential vault, but exercises the actual shared/native engines.
+    // This entry point does not exist in production release builds.
+    #[cfg(all(debug_assertions, target_os = "macos", target_arch = "aarch64"))]
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--openless-local-asr-check")) {
+        let args: Vec<_> = std::env::args_os().skip(2).collect();
+        if !(args.len() == 2 || (args.len() == 3 && args[2] == "--download")) {
+            eprintln!("usage: openless --openless-local-asr-check <isolated openless-asr-acceptance* directory> <16kHz mono WAV> [--download]");
+            std::process::exit(2);
+        }
+        let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("acceptance runtime");
+        match runtime.block_on(crate::asr::local::experimental::acceptance::run(
+            args[0].clone().into(), args[1].clone().into(), args.len() == 3,
+        )) {
+            Ok(()) => return,
+            Err(error) => { eprintln!("local ASR acceptance failed: {error:#}"); std::process::exit(1); }
+        }
+    }
+    // Old installations/launchers must not revive the retired native worker.
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--openless-mlx-worker")) {
+        eprintln!("Legacy local ASR worker has been retired");
+        return;
+    }
 
     #[cfg(mobile)]
     {
@@ -420,6 +441,10 @@ macro_rules! app_invoke_handler_desktop {
             commands::list_provider_descriptors,
             commands::validate_provider_credentials,
             commands::list_provider_models,
+            commands::experimental_asr_status,
+            commands::experimental_asr_set_enabled,
+            commands::experimental_asr_delete,
+            commands::experimental_asr_acknowledge,
             commands::local_asr_get_settings,
             commands::local_asr_storage_settings,
             commands::local_asr_set_models_base_dir,
@@ -448,6 +473,7 @@ macro_rules! app_invoke_handler_desktop {
             commands::foundry_local_asr_set_language_hint,
             commands::foundry_local_asr_set_runtime_source,
             commands::foundry_local_asr_set_keep_loaded_secs,
+            commands::foundry_local_asr_download,
             commands::foundry_local_asr_prepare,
             commands::foundry_local_asr_cancel_prepare,
             commands::foundry_local_asr_release,

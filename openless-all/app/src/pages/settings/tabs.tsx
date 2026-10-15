@@ -5,6 +5,9 @@ import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState } from 'react';
 import { AndroidPermissionsPanel } from '@android/components/AndroidPermissionsPanel';
 import { Icon } from '../../components/Icon';
+import { Tooltip } from '../../components/Tooltip';
+import { detectOS } from '../../components/WindowChrome';
+import { ExperimentalAsrSection, type ExperimentalAsrController } from './ExperimentalAsrSection';
 import { RecordingInputSection } from './RecordingInputSection';
 import { RemoteInputSection } from './RemoteInputSection';
 import { ShortcutsSection } from './ShortcutsSection';
@@ -113,16 +116,19 @@ export function AppearanceTab() {
 }
 
 // AI services & models: organizes channels, local models, and network settings by current pipeline and platform capabilities.
-export function ServicesTab() {
+export function ServicesTab({ asrNavigation = 0 }: { asrNavigation?: number } = {}) {
   const { t } = useTranslation();
   const { prefs, updatePrefs } = useHotkeySettings();
   const platformCaps = usePlatformCaps();
-  const showLocalModel = platformCaps?.supportsLocalAsr === true;
+  const showLocalModel = detectOS() !== 'mac' && platformCaps?.supportsLocalAsr === true;
   const multimodal =
     prefs?.multimodalPipelineEnabled === true && prefs.pipelineMode === 'multimodal';
-  const [view, setView] = useState<ServiceViewId>('llm');
-  const views = availableServiceViews(showLocalModel);
-  const selectedView = resolveServiceView(view, views, multimodal);
+  const [view, setView] = useState<ServiceViewId>(asrNavigation ? 'asr' : 'llm');
+  useEffect(() => {
+    if (asrNavigation) setView('asr');
+  }, [asrNavigation]);
+  const views = availableServiceViews(showLocalModel, detectOS());
+  const selectedView = resolveServiceView(view, views, multimodal, detectOS());
   const contentRef = useRef<HTMLDivElement>(null);
   useContentMotion(contentRef, selectedView);
   const pipelineRef = useRef<HTMLDivElement>(null);
@@ -228,7 +234,18 @@ export function ServicesTab() {
         >
           <span ref={navigationIndicatorRef} aria-hidden className="ol-service-view-indicator" />
           {views.map((id) => {
-            const inactive = isServiceViewInactive(id, multimodal);
+            if (id === 'models' && detectOS() === 'mac') {
+              return (
+                <Tooltip key={id} content={t('experimentalAsr.retiredHint')} placement="bottom" wrap focusable>
+                  <button type="button" disabled data-retired-local-models aria-label={t('modal.serviceViews.models')}
+                    style={{ pointerEvents: 'none' }}>
+                    <span>{t('modal.serviceViews.models')}</span>
+                    <span className="ol-service-inactive-tag">{t('experimentalAsr.retiredLabel')}</span>
+                  </button>
+                </Tooltip>
+              );
+            }
+            const inactive = isServiceViewInactive(id, multimodal, detectOS());
             const required = !inactive && (id === 'llm' || id === 'asr');
             const configured =
               id === 'llm' ? requiredConfigured.llm : id === 'asr' ? requiredConfigured.asr : false;
@@ -287,7 +304,7 @@ export function ServicesTab() {
             {selectedView === 'llm' && <ProvidersSection kind="llm" />}
             {selectedView === 'asr' && <ProvidersSection kind="asr" />}
             {selectedView === 'omni' && <OmniChannelSection />}
-            {selectedView === 'models' && <LocalModelsSection />}
+            {showLocalModel && selectedView === 'models' && <LocalModelsSection />}
             {selectedView === 'connections' && (
               <>
                 <NetworkSection />
@@ -351,7 +368,11 @@ export function AdvancedTab({
   pages,
   page,
   onOpenPage,
+  experimentalAsr,
+  onOpenAsr,
 }: {
+  experimentalAsr: ExperimentalAsrController;
+  onOpenAsr: () => Promise<void>;
   pages: AdvancedPage[];
   page: AdvancedPageId | null;
   onOpenPage: (page: AdvancedPageId) => void;
@@ -391,6 +412,9 @@ export function AdvancedTab({
           aria-label={t(item.titleKey)}
           data-ol-advanced-page={item.id}
         >
+          {item.id === 'localModels' && (
+            <ExperimentalAsrSection controller={experimentalAsr} onOpenAsr={onOpenAsr} />
+          )}
           {item.id === 'lessComputer' && <CodingAgentSection />}
           {item.id === 'claudeConsole' && <ClaudeConsoleSection />}
           {item.id === 'vocabularyLearning' && <VocabularyLearningSection />}

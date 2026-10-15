@@ -1,7 +1,10 @@
 // Simplified Chinese resources — kept in sync with the product's current copy.
 // The eight locale files share one structure; add/remove keys in all of them together.
 
+import { experimentalAsrZhCN as experimentalAsr } from './experimentalAsr';
+
 export const zhCN = {
+  experimentalAsr,
   voiceEdit: {
     title: '语音编辑会话',
     description: '口述草稿或读取目标文本，再用多轮语音指令修改，确认后写回输入框。',
@@ -1635,6 +1638,9 @@ export const zhCN = {
         asrSherpaOnnxLocal: '本地 sherpa-onnx（实验性）',
         asrFoundryLocalWhisper: '本地 Whisper（Foundry Local）',
         asrLocalWhisper: '本地 Whisper（批量解码）',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
+        asrExperimentalTextStream: experimentalAsr.textStreamLabel,
         asrLocalQwen3: '本地 Qwen3-ASR',
         asrLocalQwen3Mlx: '本地 Qwen3-ASR（MLX / Metal）',
         asrLocalQwen3C: '本地 Qwen3-ASR（C / CPU）',
@@ -2236,6 +2242,7 @@ export const zhCN = {
     autoSaveHint: '修改后自动保存',
     backToAdvanced: '返回实验与扩展',
     advancedPages: {
+      localModels: experimentalAsr.description,
       vocabularyLearning: '从听写后的手动改词中学习，配置观察时长、确认时间和词长。',
       lessComputer: '选择 Agent，配置模型、权限与工作目录。',
       claudeConsole: '检测 Claude Code，并查看测试任务的运行输出。',
@@ -2390,7 +2397,10 @@ export const zhCN = {
     foundryError: 'Foundry 状态',
     foundrySetDefault: '设为默认 / 启用 Windows 本地 ASR',
     foundryEnabling: '正在启用…',
-    foundryPrepare: '准备 / 下载 / 加载',
+    foundryPrepare: '下载 / 校验模型',
+    runtimeDownloadRestart:
+      '下载操作使用了本地运行组件。请重启 OpenLess 后再启用；模型不会自动启用。现在重启？',
+    restartNow: '现在重启',
     foundryPreparing: '正在准备…',
     foundryReleasing: '正在释放…',
     foundryRetryPrepare: '继续准备 / 重试',

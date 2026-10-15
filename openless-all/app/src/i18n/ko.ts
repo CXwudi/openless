@@ -4,8 +4,11 @@ import { en } from './en';
 // 한국어 (Beta) — AI 기계 번역 기반. 원어민 검토를 권장합니다.
 // 구조는 zh-CN.ts 를 따릅니다. 새 key 를 추가할 때 ja.ts / ko.ts 도 동시에
 // 갱신해 주세요(갱신되지 않은 key 는 ...en 으로 영어로 fallback 됩니다).
+import { experimentalAsrEn as experimentalAsr } from './experimentalAsr';
+
 export const ko: typeof zhCN = {
   ...en,
+  experimentalAsr,
   voiceEdit: {
     title: '음성 편집 세션',
     description:
@@ -1696,6 +1699,9 @@ export const ko: typeof zhCN = {
         asrSherpaOnnxLocal: '로컬 sherpa-onnx(실험적)',
         asrFoundryLocalWhisper: '로컬 Whisper(Foundry Local)',
         asrLocalWhisper: '로컬 Whisper(배치)',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
+        asrExperimentalTextStream: experimentalAsr.textStreamLabel,
         asrLocalQwen3: '로컬 Qwen3-ASR',
         asrLocalQwen3Mlx: '로컬 Qwen3-ASR(MLX / Metal)',
         asrLocalQwen3C: '로컬 Qwen3-ASR(C / CPU)',
@@ -2321,6 +2327,7 @@ export const ko: typeof zhCN = {
     autoSaveHint: '변경 사항이 자동 저장됩니다',
     backToAdvanced: '실험 및 확장으로 돌아가기',
     advancedPages: {
+      localModels: experimentalAsr.description,
       vocabularyLearning:
         '음성 입력 후 수동 수정으로 학습하고 관찰 시간, 확인 시간, 글자 수를 설정합니다.',
       lessComputer: 'Agent를 선택하고 모델, 권한, 작업 디렉터리를 설정합니다.',
@@ -2483,7 +2490,10 @@ export const ko: typeof zhCN = {
     foundryError: 'Foundry 상태',
     foundrySetDefault: '기본값으로 설정 / Windows 로컬 ASR 활성화',
     foundryEnabling: '활성화 중…',
-    foundryPrepare: '준비 / 다운로드 / 로드',
+    foundryPrepare: '모델 다운로드 / 확인',
+    runtimeDownloadRestart:
+      '다운로드 중 네이티브 런타임을 사용했습니다. 모델을 활성화하기 전에 OpenLess를 다시 시작하세요. 모델은 자동으로 활성화되지 않습니다. 지금 다시 시작할까요?',
+    restartNow: '지금 다시 시작',
     foundryPreparing: '준비 중…',
     foundryReleasing: '해제 중…',
     foundryRetryPrepare: '준비 계속 / 다시 시도',

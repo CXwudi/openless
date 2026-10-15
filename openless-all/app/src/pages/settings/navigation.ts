@@ -12,6 +12,7 @@ export type SettingsSectionId =
   | 'about';
 
 export const ADVANCED_PAGES = [
+  { id: 'localModels', icon: 'mic', titleKey: 'experimentalAsr.title' },
   { id: 'lessComputer', icon: 'mac', titleKey: 'settings.codingAgent.title' },
   { id: 'claudeConsole', icon: 'chevLR', titleKey: 'settings.codingConsole.title' },
   { id: 'vocabularyLearning', icon: 'sparkle', titleKey: 'settings.vocabularyLearning.title' },
@@ -23,6 +24,7 @@ export type AdvancedPageId = AdvancedPage['id'];
 
 export function visibleAdvancedPages(platform: PlatformKind | undefined, os: OS): AdvancedPage[] {
   return ADVANCED_PAGES.filter((page) => {
+    if (page.id === 'localModels') return platform === 'desktop' && os === 'mac';
     if (page.id === 'lessComputer') return platform === 'desktop' && (os === 'mac' || os === 'win');
     if (page.id === 'claudeConsole') return platform === 'desktop' && os === 'mac';
     if (page.id === 'vocabularyLearning')
@@ -79,11 +81,18 @@ export function searchSettingsSections<T extends SearchableSettingsSection>(
 
 export type ServiceViewId = 'llm' | 'asr' | 'omni' | 'models' | 'connections';
 
-export function availableServiceViews(localModels: boolean): ServiceViewId[] {
-  return ['llm', 'asr', 'omni', ...(localModels ? (['models'] as const) : []), 'connections'];
+export function availableServiceViews(localModels: boolean, os?: OS): ServiceViewId[] {
+  return [
+    'llm',
+    'asr',
+    'omni',
+    ...(localModels || os === 'mac' ? (['models'] as const) : []),
+    'connections',
+  ];
 }
 
-export function isServiceViewInactive(view: ServiceViewId, multimodal: boolean): boolean {
+export function isServiceViewInactive(view: ServiceViewId, multimodal: boolean, os?: OS): boolean {
+  if (view === 'models' && os === 'mac') return true;
   return multimodal ? view !== 'omni' && view !== 'connections' : view === 'omni';
 }
 
@@ -91,7 +100,8 @@ export function resolveServiceView(
   requested: ServiceViewId,
   available: ServiceViewId[],
   multimodal: boolean,
+  os?: OS,
 ): ServiceViewId {
-  const enabled = available.filter((view) => !isServiceViewInactive(view, multimodal));
+  const enabled = available.filter((view) => !isServiceViewInactive(view, multimodal, os));
   return enabled.includes(requested) ? requested : enabled[0];
 }

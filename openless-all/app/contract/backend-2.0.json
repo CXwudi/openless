@@ -351,6 +351,7 @@
             "available": true,
             "loaded": false,
             "activeModel": "qwen3-asr-0.6b",
+            "restartRequired": false,
             "keepLoadedSecs": 0
           }
         }

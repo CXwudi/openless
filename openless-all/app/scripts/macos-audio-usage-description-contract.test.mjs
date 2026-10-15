@@ -5,13 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 if (process.platform !== 'darwin') {
-  console.log('macOS speech usage description contract skipped on non-macOS');
+  console.log('macOS audio usage description contract skipped on non-macOS');
   process.exit(0);
 }
 
 const scriptsDir = fileURLToPath(new URL('.', import.meta.url));
-const checker = join(scriptsDir, 'check-macos-speech-usage-description.sh');
-const fixtureDir = mkdtempSync(join(tmpdir(), 'openless-speech-usage-'));
+const checker = join(scriptsDir, 'check-macos-audio-usage-description.sh');
+const fixtureDir = mkdtempSync(join(tmpdir(), 'openless-audio-usage-'));
 
 function plist(value) {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -57,7 +57,7 @@ try {
     'valid string',
     writeFixture(
       'valid.plist',
-      '<key>NSSpeechRecognitionUsageDescription</key><string>OpenLess transcribes speech locally.</string>',
+      '<key>NSMicrophoneUsageDescription</key><string>OpenLess transcribes speech locally.</string>',
     ),
   );
   expectFailure('missing key', writeFixture('missing-key.plist', ''));
@@ -65,14 +65,14 @@ try {
     'empty string',
     writeFixture(
       'empty-string.plist',
-      '<key>NSSpeechRecognitionUsageDescription</key><string></string>',
+      '<key>NSMicrophoneUsageDescription</key><string></string>',
     ),
   );
   expectFailure(
     'whitespace-only string',
     writeFixture(
       'whitespace-string.plist',
-      '<key>NSSpeechRecognitionUsageDescription</key><string>  \n\t  </string>',
+      '<key>NSMicrophoneUsageDescription</key><string>  \n\t  </string>',
     ),
   );
   for (const [name, slug, whitespace] of [
@@ -84,14 +84,14 @@ try {
       `${name}-only string under C locale`,
       writeFixture(
         `${slug}-only.plist`,
-        `<key>NSSpeechRecognitionUsageDescription</key><string>${whitespace}</string>`,
+        `<key>NSMicrophoneUsageDescription</key><string>${whitespace}</string>`,
       ),
       { LC_ALL: 'C', LANG: 'C' },
     );
   }
   expectFailure(
     'wrong type',
-    writeFixture('wrong-type.plist', '<key>NSSpeechRecognitionUsageDescription</key><true/>'),
+    writeFixture('wrong-type.plist', '<key>NSMicrophoneUsageDescription</key><true/>'),
   );
   expectFailure('missing file', join(fixtureDir, 'does-not-exist.plist'));
 } finally {

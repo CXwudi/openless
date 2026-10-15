@@ -62,12 +62,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The MLX submodule is only needed for macOS release builds.
-          submodules: ${{ startsWith(matrix.platform, 'macos') && 'recursive' || 'false' }}
-
-      - name: Disable macOS-only Qwen3 MLX dependency
-        if: ${{ !startsWith(matrix.platform, 'macos') }}
-        run: node openless-all/app/scripts/ci-disable-macos-qwen3.mjs
+          # Optional inference dependencies are installed only by explicit user opt-in.
+          submodules: false
 
       - uses: actions/setup-node@v4
         with:
@@ -98,12 +94,6 @@ jobs:
         with:
           key: macos-release-v1
           workspaces: 'openless-all/app/src-tauri -> target'
-
-      - name: Cache macOS MLX native build
-        if: matrix.updater-arch == 'aarch64'
-        uses: ./.github/actions/cache-macos-mlx
-        with:
-          profile: release
 
       - name: Prepare Windows Sherpa static libraries
         if: matrix.platform == 'windows-latest'

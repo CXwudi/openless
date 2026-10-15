@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const read = (path) => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
+
+const adapters = read('src-tauri/src/core_adapters.rs');
+assert.match(adapters, /cfg!\(target_os = "macos"\)[^]*?ExperimentalNativeRuntime::new/);
+assert.match(
+  adapters,
+  /store\.models_root_dir\(\)[^]*?default_models_root\(\)[^]*?retire_macos_local_models/,
+);
+assert.doesNotMatch(adapters, /register\(provider_type[^]*?qwen_cache/);
+const router = adapters.slice(adapters.indexOf('let native_asr:'), adapters.indexOf('let polisher ='));
+assert.doesNotMatch(router, /LOCAL_QWEN3|LOCAL_WHISPER|APPLE_SPEECH|Qwen|Whisper/);
+assert.match(adapters, /cfg\(target_os = "windows"\)\]\s+struct TauriNativeTranscriptionEngine/);
+const availability = adapters.slice(
+  adapters.indexOf('impl openless_core::ModelRuntimeAdapter'),
+  adapters.indexOf('fn inspect_native_models'),
+);
+assert.match(availability, /LocalAsrRuntime::Generic => false/);
+
+const service = read('crates/openless-core/src/experimental_asr.rs');
+const run = service.slice(
+  service.indexOf('    async fn run('),
+  service.indexOf('    pub fn release_runtime('),
+);
+assert.doesNotMatch(run, /runtime\.prepare/);
+assert.match(service, /saved\.download_pending/);
+const native = read('src-tauri/src/asr/local/experimental.rs');
+assert.match(native, /models\.lease\(model\)[^]*?runtime\.prepare\(model[^]*?models\.check_lease/);
+
+const channels = read('src/pages/settings/ChannelList.tsx');
+assert.match(channels, /data-retired-local-asr=/);
+assert.match(channels, /disabled=\{retired\}/);
+assert.match(channels, /os === 'mac' && isRetiredMacAsrProvider/);
+const page = read('src/pages/settings/ExperimentalAsrSection.tsx');
+assert.match(page, /experimentalAsr\.memoryHint/);
+assert.match(page, /deleteExperimentalAsr/);
+const vault = read('src-tauri/src/persistence/credentials.rs');
+assert.match(vault, /retire_macos_local_asr\(\)[^]*?ChangeOrigin::LocalOnly/);
+console.log('macOS legacy ASR retirement and lazy experimental runtime contracts passed');

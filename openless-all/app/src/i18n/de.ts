@@ -1,6 +1,9 @@
 import type { zhCN } from './zh-CN';
 
+import { experimentalAsrEn as experimentalAsr } from './experimentalAsr';
+
 export const de: typeof zhCN = {
+  experimentalAsr,
   voiceEdit: {
     title: 'Sprachbearbeitung',
     description:
@@ -1759,6 +1762,9 @@ export const de: typeof zhCN = {
         asrSherpaOnnxLocal: 'Lokales sherpa-onnx (experimentell)',
         asrFoundryLocalWhisper: 'Lokales Whisper (Foundry Local)',
         asrLocalWhisper: 'Lokales Whisper (Stapelverarbeitung)',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
+        asrExperimentalTextStream: experimentalAsr.textStreamLabel,
         asrLocalQwen3: 'Lokales Qwen3-ASR',
         asrLocalQwen3Mlx: 'Lokales Qwen3-ASR (MLX / Metal)',
         asrLocalQwen3C: 'Lokales Qwen3-ASR (C / CPU)',
@@ -2436,6 +2442,7 @@ export const de: typeof zhCN = {
     autoSaveHint: 'Änderungen werden automatisch gespeichert',
     backToAdvanced: 'Zurück zu Experimente und Erweiterungen',
     advancedPages: {
+      localModels: experimentalAsr.description,
       vocabularyLearning:
         'Aus manuellen Korrekturen lernen; Beobachtung, Bestätigungszeit und Wortlänge einstellen.',
       lessComputer:
@@ -2607,7 +2614,10 @@ export const de: typeof zhCN = {
     foundryError: 'Foundry-Status',
     foundrySetDefault: 'Als Standard festlegen / lokale Windows-ASR aktivieren',
     foundryEnabling: 'Wird aktiviert…',
-    foundryPrepare: 'Vorbereiten / Herunterladen / Laden',
+    foundryPrepare: 'Modell herunterladen / prüfen',
+    runtimeDownloadRestart:
+      'Der Download hat native Laufzeitkomponenten verwendet. Starten Sie OpenLess vor dem Aktivieren neu. Das Modell wird nicht automatisch aktiviert. Jetzt neu starten?',
+    restartNow: 'Jetzt neu starten',
     foundryPreparing: 'Wird vorbereitet…',
     foundryReleasing: 'Wird entladen…',
     foundryRetryPrepare: 'Fortsetzen / Vorbereitung wiederholen',

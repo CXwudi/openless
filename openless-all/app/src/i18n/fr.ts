@@ -1,6 +1,9 @@
 import type { zhCN } from './zh-CN';
 
+import { experimentalAsrEn as experimentalAsr } from './experimentalAsr';
+
 export const fr: typeof zhCN = {
+  experimentalAsr,
   voiceEdit: {
     title: 'Session de modification vocale',
     description:
@@ -1773,6 +1776,9 @@ export const fr: typeof zhCN = {
         asrSherpaOnnxLocal: 'sherpa-onnx local (expérimental)',
         asrFoundryLocalWhisper: 'Whisper local (Foundry Local)',
         asrLocalWhisper: 'Whisper local (par lots)',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
+        asrExperimentalTextStream: experimentalAsr.textStreamLabel,
         asrLocalQwen3: 'Qwen3-ASR local',
         asrLocalQwen3Mlx: 'Qwen3-ASR local (MLX / Metal)',
         asrLocalQwen3C: 'Qwen3-ASR local (C / CPU)',
@@ -2449,6 +2455,7 @@ export const fr: typeof zhCN = {
     autoSaveHint: 'Les modifications sont enregistrées automatiquement',
     backToAdvanced: 'Retour à Expériences et extensions',
     advancedPages: {
+      localModels: experimentalAsr.description,
       vocabularyLearning:
         'Apprendre des corrections manuelles ; régler l’observation, la confirmation et la longueur.',
       lessComputer:
@@ -2620,7 +2627,10 @@ export const fr: typeof zhCN = {
     foundryError: 'État de Foundry',
     foundrySetDefault: 'Définir par défaut / Activer l’ASR local Windows',
     foundryEnabling: 'Activation…',
-    foundryPrepare: 'Préparer / Télécharger / Charger',
+    foundryPrepare: 'Télécharger / vérifier le modèle',
+    runtimeDownloadRestart:
+      'Le téléchargement a utilisé des composants natifs. Redémarrez OpenLess avant d’activer le modèle ; il ne sera pas activé automatiquement. Redémarrer maintenant ?',
+    restartNow: 'Redémarrer maintenant',
     foundryPreparing: 'Préparation…',
     foundryReleasing: 'Libération…',
     foundryRetryPrepare: 'Continuer / Réessayer la préparation',

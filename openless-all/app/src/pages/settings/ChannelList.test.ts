@@ -18,7 +18,7 @@ const localProviders = [
 ] as const;
 
 const expectedByPlatform: Record<OS, readonly string[]> = {
-  mac: ['local-qwen3-mlx', 'local-qwen3-c', 'local-whisper', 'apple-speech'],
+  mac: [],
   win: ['foundry-local-whisper', 'sherpa-onnx-local'],
   android: [],
 };
@@ -71,8 +71,8 @@ for (const os of Object.keys(expectedByPlatform) as OS[]) {
 }
 
 const intelMacIds = new Set(asrPresets('mac', false).map((preset) => preset.id));
-if (intelMacIds.has('local-qwen3-mlx') || !intelMacIds.has('local-qwen3-c')) {
-  throw new Error('Intel macOS must expose C/CPU Qwen3 but not MLX');
+if (intelMacIds.has('local-qwen3-mlx') || intelMacIds.has('local-qwen3-c')) {
+  throw new Error('legacy models must not be offered on either Intel or Apple Silicon macOS');
 }
 
 const legacyQwenEditIds = new Set(

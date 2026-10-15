@@ -35,6 +35,11 @@ import {
 import { ChannelEditorHostContext } from '../pages/settings/ChannelEditorHostContext';
 import { ProviderLeaveContext, useProviderForm } from '../pages/settings/ProviderForm';
 import { useContentMotion, useOverlayMotion } from '../lib/motion';
+import {
+  useExperimentalAsr,
+  ExperimentalAsrGuidance,
+} from '../pages/settings/ExperimentalAsrSection';
+import { useHotkeySettings } from '../state/HotkeySettingsContext';
 
 export type { SettingsSectionId } from '../pages/settings/navigation';
 
@@ -67,6 +72,20 @@ export function SettingsModal({
   const [advancedPage, setAdvancedPage] = useState<AdvancedPageId | null>(null);
   const [query, setQuery] = useState('');
   const [platformCaps, setPlatformCaps] = useState(getCachedPlatformCapabilities);
+  const experimentalAsr = useExperimentalAsr(platformCaps?.platform === 'desktop' && os === 'mac');
+  const { updatePrefs } = useHotkeySettings();
+  const [asrNavigation, setAsrNavigation] = useState(0);
+  const openExperimentalAsrChannels = async () => {
+    const navigated = await providerForm.finish(async () => {
+      await updatePrefs((current) => ({ ...current, pipelineMode: 'traditional' }));
+      channelCloseRef.current?.();
+      setAsrNavigation((value) => value + 1);
+      setQuery('');
+      setAdvancedPage(null);
+      setSection('services');
+    });
+    if (!navigated) throw new Error(t('common.operationFailed'));
+  };
   const savedToast = useSavedToastListener();
   const surfaceRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -693,13 +712,15 @@ export function SettingsModal({
                       {section === 'inputMethod' && <InputMethodTab />}
                       {section === 'shortcuts' && <ShortcutsTab />}
                       {section === 'appearance' && <AppearanceTab />}
-                      {section === 'services' && <ServicesTab />}
+                      {section === 'services' && <ServicesTab asrNavigation={asrNavigation} />}
                       {section === 'privacy' && <PrivacyTab />}
                       {section === 'advanced' && (
                         <AdvancedTab
                           pages={advancedPages}
                           page={advancedPage}
                           onOpenPage={openAdvancedPage}
+                          experimentalAsr={experimentalAsr}
+                          onOpenAsr={openExperimentalAsrChannels}
                         />
                       )}
                       {section === 'about' && <AboutTab />}
@@ -712,6 +733,10 @@ export function SettingsModal({
           </div>
         </div>
       </div>
+      <ExperimentalAsrGuidance
+        controller={experimentalAsr}
+        onOpenAsr={openExperimentalAsrChannels}
+      />
     </ProviderLeaveContext.Provider>
   );
 }

@@ -4,8 +4,11 @@ import { en } from './en';
 // Japanese (Beta) — AI machine translation based; native-speaker review recommended.
 // Structure mirrors zh-CN.ts. When adding new keys, update ja.ts / ko.ts as well
 // (keys not updated fall back to English via ...en).
+import { experimentalAsrEn as experimentalAsr } from './experimentalAsr';
+
 export const ja: typeof zhCN = {
   ...en,
+  experimentalAsr,
   voiceEdit: {
     title: '音声編集セッション',
     description:
@@ -1708,6 +1711,9 @@ export const ja: typeof zhCN = {
         asrSherpaOnnxLocal: 'ローカル sherpa-onnx（実験的）',
         asrFoundryLocalWhisper: 'ローカル Whisper（Foundry Local）',
         asrLocalWhisper: 'ローカル Whisper（バッチ）',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
+        asrExperimentalTextStream: experimentalAsr.textStreamLabel,
         asrLocalQwen3: 'ローカル Qwen3-ASR',
         asrLocalQwen3Mlx: 'ローカル Qwen3-ASR（MLX / Metal）',
         asrLocalQwen3C: 'ローカル Qwen3-ASR（C / CPU）',
@@ -2340,6 +2346,7 @@ export const ja: typeof zhCN = {
     autoSaveHint: '変更は自動保存されます',
     backToAdvanced: '実験と拡張に戻る',
     advancedPages: {
+      localModels: experimentalAsr.description,
       vocabularyLearning:
         '音声入力後の手動修正から学習し、監視時間・確認時間・文字数を設定します。',
       lessComputer: 'Agent を選び、モデル・権限・作業ディレクトリを設定します。',
@@ -2503,7 +2510,10 @@ export const ja: typeof zhCN = {
     foundryError: 'Foundry 状態',
     foundrySetDefault: '既定に設定 / Windows ローカル ASR を有効化',
     foundryEnabling: '有効化中…',
-    foundryPrepare: '準備 / ダウンロード / 読み込み',
+    foundryPrepare: 'モデルをダウンロード / 検証',
+    runtimeDownloadRestart:
+      'ダウンロードでネイティブ実行環境を使用しました。有効にする前に OpenLess を再起動してください。モデルは自動で有効になりません。今すぐ再起動しますか？',
+    restartNow: '今すぐ再起動',
     foundryPreparing: '準備中…',
     foundryReleasing: '解放中…',
     foundryRetryPrepare: '準備を続行 / 再試行',

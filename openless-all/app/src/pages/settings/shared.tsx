@@ -274,6 +274,9 @@ export const inputStyle: CSSProperties = {
 // the Core ProviderDescriptor so no Host owns a drifting copy of provider policy. Order and keys here
 // are only for localization fallback; protocol notes belong near Core provider_rules.
 export const ASR_LABELS = [
+  { id: 'experimental-textstream', nameKey: 'asrExperimentalTextStream' },
+  { id: 'experimental-sensevoice', nameKey: 'asrExperimentalSenseVoice' },
+  { id: 'experimental-embedding-gemma', nameKey: 'asrExperimentalGemma' },
   { id: 'volcengine', nameKey: 'asrVolcengine' },
   { id: 'elevenlabs', nameKey: 'asrElevenLabs' },
   { id: 'bailian', nameKey: 'asrBailian' },

@@ -107,6 +107,29 @@ assert.equal(
   'macOS retains its native correction observer settings',
 );
 
+assert.equal(
+  visibleAdvancedPages('desktop', 'mac')[0].id,
+  'localModels',
+  'macOS experiments entry is first',
+);
+assert.equal(
+  visibleAdvancedPages('desktop', 'win').some((page) => page.id === 'localModels'),
+  false,
+  'Windows experiments stay unchanged',
+);
+assert.equal(
+  availableServiceViews(false, 'mac').includes('models'),
+  true,
+  'macOS retains only a disabled retirement placeholder',
+);
+assert.equal(
+  availableServiceViews(true, 'win').includes('models'),
+  true,
+  'Windows keeps model management',
+);
+
+assert.equal(isServiceViewInactive('models', false, 'mac'), true, 'Mac legacy entry is always disabled');
+assert.equal(resolveServiceView('models', availableServiceViews(false, 'mac'), false, 'mac'), 'llm', 'retired entry never opens old model controls');
 const serviceViews = availableServiceViews(true);
 assert.deepEqual(
   serviceViews,

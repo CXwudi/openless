@@ -20,6 +20,8 @@ import { useOverlayMotion } from '../../lib/motion';
 import { SelectLite } from '../../components/ui/SelectLite';
 import { detectOS, type OS } from '../../components/WindowChrome';
 import { testLocalAsrChannel } from '../../lib/localAsr';
+import { Tooltip } from '../../components/Tooltip';
+import { isExperimentalAsrProvider, isRetiredMacAsrProvider } from '../../lib/experimentalAsr';
 import {
   createChannel,
   deleteChannel,
@@ -95,6 +97,8 @@ export function presetsFor(
   if (kind === 'llm') return descriptorPresets;
   const available = descriptorPresets;
   const visible = available.filter((p) => {
+    if (isExperimentalAsrProvider(p.id)) return false;
+    if (os === 'mac' && isRetiredMacAsrProvider(p.id)) return false;
     // 本地引擎严格按其实际支持的平台暴露；Android 不展示桌面专有实现。
     if (p.id === 'local-qwen3-mlx') return os === 'mac' && supportsQwen3Mlx;
     if (p.id === 'local-whisper' || p.id === 'apple-speech') return os === 'mac';
@@ -195,6 +199,7 @@ export function channelTestMode(
   validationProbe: string | undefined,
 ): ChannelTestMode {
   if (kind !== 'asr') return 'provider';
+  if (isExperimentalAsrProvider(providerType)) return 'unavailable';
   if (LOCAL_MODEL_CHANNEL_PROVIDERS.has(providerType)) return 'local-model';
   if (
     providerType === 'apple-speech' &&
@@ -286,6 +291,13 @@ export function ChannelList({
 
   useEffect(() => {
     void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const refreshExperimental = () => void refresh();
+    window.addEventListener('ol-experimental-asr-channels-changed', refreshExperimental);
+    return () =>
+      window.removeEventListener('ol-experimental-asr-channels-changed', refreshExperimental);
   }, [refresh]);
 
   // ── Add: one step ──
@@ -632,16 +644,28 @@ export function ChannelList({
         }}
       >
         {channels.map((channel) => {
-          const isActive = channel.id === activeId;
+          const retired =
+            kind === 'asr' && os === 'mac' && isRetiredMacAsrProvider(channel.providerType);
+          const isActive = !retired && channel.id === activeId;
           const providerLabel = presetLabel(kind, channel.providerType, t, descriptors);
           const label = channel.name.trim() || providerLabel;
-          const model = models[channel.id] ?? '';
+          const model = isExperimentalAsrProvider(channel.providerType)
+            ? channel.providerType === 'experimental-textstream' ? 'TextStream' : channel.providerType === 'experimental-sensevoice'
+              ? 'SenseVoice Small'
+              : 'Embedding Gemma'
+            : (models[channel.id] ?? '');
           const descriptor = descriptors.find((item) => item.providerType === channel.providerType);
           const localEngine = descriptor?.authRequirement === 'none';
-          const testMode = channelTestMode(kind, channel.providerType, descriptor?.validationProbe);
-          return (
+          const testMode = retired
+            ? 'unavailable'
+            : channelTestMode(kind, channel.providerType, descriptor?.validationProbe);
+          const content = (
             <div
               key={channel.id}
+              data-retired-local-asr={retired || undefined}
+              data-channel-id={channel.id}
+              data-channel-provider={channel.providerType}
+              data-channel-active={isActive}
               ref={(element) => {
                 if (element) rowsRef.current.set(channel.id, element);
                 else rowsRef.current.delete(channel.id);
@@ -667,7 +691,7 @@ export function ChannelList({
                 zIndex: draggingId === channel.id ? 2 : undefined,
                 transform: draggingId === channel.id ? 'scale(1.012)' : undefined,
                 boxShadow: draggingId === channel.id ? 'var(--ol-shadow-lg)' : undefined,
-                opacity: draggingId === channel.id ? 0.96 : 1,
+                opacity: retired ? 0.5 : draggingId === channel.id ? 0.96 : 1,
                 transition: draggingId
                   ? undefined
                   : 'background 0.16s var(--ol-motion-quick), border-color 0.16s var(--ol-motion-quick), transform 0.18s var(--ol-motion-spring), box-shadow 0.18s var(--ol-motion-soft)',
@@ -683,7 +707,9 @@ export function ChannelList({
                 }}
               >
                 <span
-                  onPointerDown={(e) => onDragHandleDown(e, channel.id)}
+                  onPointerDown={(e) => {
+                    if (!retired) onDragHandleDown(e, channel.id);
+                  }}
                   onClick={(e) => e.stopPropagation()}
                   title={t('settings.channels.dragHint')}
                   aria-label={t('settings.channels.dragHint')}
@@ -717,7 +743,7 @@ export function ChannelList({
                         {t('settings.channels.current')}
                       </Pill>
                     )}
-                    {!channel.enabled && (
+                    {(retired || !channel.enabled) && (
                       <Pill tone="outline" size="sm">
                         {t('settings.channels.disabled')}
                       </Pill>
@@ -742,6 +768,7 @@ export function ChannelList({
                         )}
                     </span>
                   </div>
+                  {retired && <p role="note">{t('experimentalAsr.retiredHint')}</p>}
                   <ChannelTestResult
                     channel={channel}
                     testing={Boolean(testingIds[channel.id])}
@@ -779,7 +806,8 @@ export function ChannelList({
                 <button
                   type="button"
                   role="switch"
-                  aria-checked={channel.enabled}
+                  aria-checked={!retired && channel.enabled}
+                  disabled={retired}
                   aria-label={t('settings.channels.enabledFor', { name: label })}
                   onClick={() => void onToggle(channel)}
                   style={{ ...ghostBtn, display: 'inline-flex', alignItems: 'center', gap: 7 }}
@@ -790,7 +818,8 @@ export function ChannelList({
                       width: 24,
                       height: 14,
                       borderRadius: 999,
-                      background: channel.enabled ? 'var(--ol-blue)' : 'var(--ol-toggle-off-bg)',
+                      background:
+                        channel.enabled && !retired ? 'var(--ol-blue)' : 'var(--ol-toggle-off-bg)',
                       position: 'relative',
                     }}
                   >
@@ -798,7 +827,7 @@ export function ChannelList({
                       style={{
                         position: 'absolute',
                         top: 2,
-                        left: channel.enabled ? 12 : 2,
+                        left: channel.enabled && !retired ? 12 : 2,
                         width: 10,
                         height: 10,
                         borderRadius: 999,
@@ -820,6 +849,7 @@ export function ChannelList({
               </div>
             </div>
           );
+          return retired ? <Tooltip key={channel.id} content={t('experimentalAsr.retiredHint')} placement="bottom" wrap focusable>{content}</Tooltip> : content;
         })}
       </div>
 

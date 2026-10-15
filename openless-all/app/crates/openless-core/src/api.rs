@@ -4642,6 +4642,7 @@ impl OpenLessBackend {
             Some(id.clone()),
             crate::llm_protocol::SERVICE_TIER_ACCOUNT,
         )?;
+        let retire_asr = kind == ChannelKind::Asr && previous.provider_type != provider_type;
         let reset = kind == ChannelKind::Llm && previous.provider_type != provider_type;
         let (old_format, old_service_tier) = if reset {
             let old_format = self.deps.credential_store.read(key.clone()).await?;
@@ -4688,7 +4689,11 @@ impl OpenLessBackend {
             }
         }
         result?;
-        self.refresh_and_publish_credentials().await.map(|_| ())
+        self.refresh_and_publish_credentials().await?;
+        if retire_asr {
+            self.release_local_asr_provider(&previous.provider_type).await?;
+        }
+        Ok(())
     }
 
     pub async fn delete_channel_if_blank(
@@ -4741,9 +4746,26 @@ impl OpenLessBackend {
         kind: ChannelKind,
         ids: Vec<String>,
     ) -> Result<(), BackendError> {
+        // The settings UI selects ASR by channel order, not only through the
+        // legacy set_active_provider command. Retire the old runtime here too.
+        let previous = if kind == ChannelKind::Asr {
+            let id = self.active_provider(ProviderSlot::Asr).await?;
+            self.list_channels(kind)
+                .await?
+                .into_iter()
+                .find(|channel| channel.id == id)
+        } else {
+            None
+        };
         self.apply_channel_mutation(ChannelMutation::Reorder { kind, ids })
-            .await
-            .map(|_| ())
+            .await?;
+        if let Some(previous) = previous {
+            if self.active_provider(ProviderSlot::Asr).await? != previous.id {
+                self.release_local_asr_provider(&previous.provider_type)
+                    .await?;
+            }
+        }
+        Ok(())
     }
 
     pub async fn record_channel_test(
@@ -4791,11 +4813,38 @@ impl OpenLessBackend {
                 "provider id must not be blank",
             ));
         }
+        let previous = if slot == ProviderSlot::Asr {
+            let id = self.deps.credential_store.active_provider(slot).await?;
+            let channels = match self
+                .deps
+                .credential_store
+                .list_channels(ChannelKind::Asr)
+                .await
+            {
+                Ok(channels) => channels,
+                Err(error) if error.code == BackendErrorCode::Unsupported => Vec::new(),
+                Err(error) => return Err(error),
+            };
+            let provider_type = channels
+                .into_iter()
+                .find(|channel| channel.id == id)
+                .map(|channel| channel.provider_type)
+                .unwrap_or_else(|| id.clone());
+            Some((id, provider_type))
+        } else {
+            None
+        };
         self.deps
             .credential_store
-            .set_active_provider(slot, provider_id)
+            .set_active_provider(slot, provider_id.clone())
             .await?;
-        self.refresh_and_publish_credentials().await
+        let status = self.refresh_and_publish_credentials().await?;
+        if let Some((previous_id, previous_type)) = previous {
+            if previous_id != provider_id {
+                self.release_local_asr_provider(&previous_type).await?;
+            }
+        }
+        Ok(status)
     }
 
     pub async fn activate_local_asr(
@@ -4811,9 +4860,64 @@ impl OpenLessBackend {
         &self,
         mutation: ChannelMutation,
     ) -> Result<ChannelMutationResult, BackendError> {
+        // Disable/delete must release native state too, not just hide a channel
+        // in the UI. Downloaded files remain untouched.
+        let retiring_id = match &mutation {
+            ChannelMutation::SetEnabled {
+                kind: ChannelKind::Asr,
+                id,
+                enabled: false,
+            }
+            | ChannelMutation::Delete {
+                kind: ChannelKind::Asr,
+                id,
+            }
+            | ChannelMutation::SetProviderType {
+                kind: ChannelKind::Asr,
+                id,
+                ..
+            } => Some(id),
+            _ => None,
+        };
+        let retiring_provider = if let Some(id) = retiring_id {
+            self.deps
+                .credential_store
+                .list_channels(ChannelKind::Asr)
+                .await?
+                .into_iter()
+                .find(|channel| &channel.id == id)
+                .map(|channel| channel.provider_type)
+        } else {
+            None
+        };
         let result = self.deps.credential_store.mutate_channel(mutation).await?;
         self.refresh_and_publish_credentials().await?;
+        if let Some(provider) = retiring_provider {
+            self.release_local_asr_provider(&provider).await?;
+        }
         Ok(result)
+    }
+
+    async fn release_local_asr_provider(&self, provider: &str) -> Result<(), BackendError> {
+        if let Some(model) = crate::experimental_asr::ExperimentalAsrModel::from_provider(provider) {
+            if let Some(service) = &self.deps.services.experimental_asr {
+                service.release_runtime(model).await?;
+            }
+            return Ok(());
+        }
+        let runtime = match provider {
+            "local-qwen3" | "local-qwen3-mlx" | "local-qwen3-c" | "local-whisper"
+            | "apple-whisper" => crate::LocalAsrRuntime::Generic,
+            "foundry-local" | "foundry-whisper" | "foundry-local-whisper" => {
+                crate::LocalAsrRuntime::Foundry
+            }
+            "sherpa-onnx" | "sherpa-onnx-local" => crate::LocalAsrRuntime::SherpaOnnx,
+            _ => return Ok(()),
+        };
+        match self.deps.services.local_asr.release(runtime).await {
+            Err(error) if error.code == BackendErrorCode::Unsupported => Ok(()),
+            result => result,
+        }
     }
 
     pub async fn refresh_and_publish_credentials(&self) -> Result<CredentialsStatus, BackendError> {
