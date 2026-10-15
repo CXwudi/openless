@@ -182,7 +182,7 @@ export function ShortcutsSection() {
       },
     },
   ];
-  if (os === 'mac' || os === 'win')
+  if (prefs.testingFeaturesEnabled && (os === 'mac' || os === 'win'))
     commands.push({
       id: 'computer',
       label: t('settings.codingAgent.title'),

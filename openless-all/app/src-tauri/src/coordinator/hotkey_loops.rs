@@ -2496,6 +2496,7 @@ pub(crate) mod less_computer_test_support {
             .unwrap(),
         );
         let mut prefs = backend.get_preferences();
+        prefs.testing_features_enabled = true;
         prefs.coding_agent_enabled = true;
         prefs.hotkey.mode = mode;
         crate::set_backend_preferences_for_test(&backend, prefs);
@@ -3127,6 +3128,7 @@ pub(crate) mod windows_less_computer_tests {
         )
         .unwrap();
         let mut prefs = backend.get_preferences();
+        prefs.testing_features_enabled = true;
         prefs.coding_agent_enabled = true;
         crate::set_backend_preferences_for_test(&backend, prefs);
 

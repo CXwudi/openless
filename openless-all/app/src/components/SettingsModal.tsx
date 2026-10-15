@@ -29,6 +29,7 @@ import {
   searchSettingsSections,
   visibleSettingsSections,
   visibleAdvancedPages,
+  isTestingFeaturePage,
   type AdvancedPageId,
   type SettingsSectionId,
 } from '../pages/settings/navigation';
@@ -73,7 +74,7 @@ export function SettingsModal({
   const [query, setQuery] = useState('');
   const [platformCaps, setPlatformCaps] = useState(getCachedPlatformCapabilities);
   const experimentalAsr = useExperimentalAsr(platformCaps?.platform === 'desktop' && os === 'mac');
-  const { updatePrefs } = useHotkeySettings();
+  const { prefs, updatePrefs } = useHotkeySettings();
   const [asrNavigation, setAsrNavigation] = useState(0);
   const openExperimentalAsrChannels = async () => {
     const navigated = await providerForm.finish(async () => {
@@ -119,7 +120,8 @@ export function SettingsModal({
   const searching = query.trim().length > 0;
   useContentMotion(scrollRef, `${section}:${searching ? 'search' : (advancedPage ?? 'root')}`);
   const results = searchSettingsSections(sections, query);
-  const advancedPages = visibleAdvancedPages(platformCaps?.platform, os);
+  const testingFeaturesEnabled = prefs?.testingFeaturesEnabled === true;
+  const advancedPages = visibleAdvancedPages(platformCaps?.platform, os, testingFeaturesEnabled);
   const activeAdvancedPage =
     section === 'advanced' && !searching
       ? advancedPages.find((page) => page.id === advancedPage)
@@ -207,8 +209,8 @@ export function SettingsModal({
 
   useEffect(() => {
     if (advancedPage && !advancedPages.some((page) => page.id === advancedPage))
-      setAdvancedPage(null);
-  }, [advancedPage, platformCaps, os]);
+      setAdvancedPage(isTestingFeaturePage(advancedPage) ? 'testingFeatures' : null);
+  }, [advancedPage, platformCaps, os, testingFeaturesEnabled]);
 
   const openAdvancedPage = (page: AdvancedPageId) => {
     setAdvancedPage(page);
@@ -217,7 +219,7 @@ export function SettingsModal({
 
   const backToAdvanced = () => {
     const previousPage = advancedPage;
-    setAdvancedPage(null);
+    setAdvancedPage(isTestingFeaturePage(previousPage) ? 'testingFeatures' : null);
     window.requestAnimationFrame(() => {
       surfaceRef.current
         ?.querySelector<HTMLElement>(`[data-ol-advanced-entry="${previousPage}"]`)
@@ -562,8 +564,16 @@ export function SettingsModal({
                           type="button"
                           className="ol-settings-back"
                           onClick={backToAdvanced}
-                          aria-label={t('modal.backToAdvanced')}
-                          title={t('modal.backToAdvanced')}
+                          aria-label={t(
+                            isTestingFeaturePage(advancedPage)
+                              ? 'modal.backToTestingFeatures'
+                              : 'modal.backToAdvanced',
+                          )}
+                          title={t(
+                            isTestingFeaturePage(advancedPage)
+                              ? 'modal.backToTestingFeatures'
+                              : 'modal.backToAdvanced',
+                          )}
                         >
                           <Icon name="chevLeft" size={19} />
                         </button>
