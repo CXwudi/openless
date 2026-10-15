@@ -4,6 +4,7 @@
 - 合并分支：`integration/desktop-beta-a.beta.5-20261015-bd`；PR 目标：`beta`。
 - 基线：`origin/beta` 的 `0454dc56`。
 - 初次产品代码检查点：`5637abee8c92d1dbff6afecfdd0877771bcb8223`；后续 CI 修复限定于桌面模块编译边界、测试布局/时序及跨平台截图，没有修改三模型推理实现。
+- 最终产品代码与安装包检查点：`edff8913c48afa79609cbb29eacc47a00620e89d`；本节下方校验值来自该检查点重新构建的 Release 包。
 - 验收环境：2026-10-15，Apple Silicon / macOS 27.0.1。
 
 ## 合并来源与边界
@@ -59,13 +60,15 @@ Ubuntu CI 执行完整交互、几何、生命周期和像素比较，不跳过�
 6. 临时旧模型升级清理定向且幂等，实验包与无关文件保留。
 7. 结束后无残留 TextStream worker 或 TCP 7890 监听。
 
-主要日志与机器可读结果：`/tmp/openless-desktop-beta5-20261015-bd/` 下的 `core.log`、`native-tests-final.log`、`frontend.log`、`backend.log`、`e2e.log`、`native-acceptance.log`、`release-package.log`、`artifacts.log`、`verified.json`。该目录可能被系统清理，本文保留主要结果。
+主要日志与机器可读结果：`/tmp/openless-desktop-beta5-20261015-bd/` 下的 `core.log`、`final-native-tests.log`、`final-frontend.log`、`backend.log`、`final-e2e.log`、`native-acceptance.log`、`final-release-package.log`、`final-artifacts.log`、`verified.json`。该目录可能被系统清理，本文保留主要结果。
 
 ## 首轮 CI 发现与修复
 
 首轮 macOS checks 与 Rust 1.88 MSRV 已通过。Windows 的版本契约在 CRLF checkout 上未匹配 Cargo.lock，已统一文本换行；Android 发现 Foundry 桌面命令模块被错误编译进移动端，已像其余本地 ASR 模块一样以 `not(mobile)` 限定声明和导出，没有添加移动端空壳。Linux Core / egui 测试已通过，但运行时边界脚本未识别通过 `#[path]` 命名的独立测试模块；现改为标准 `experimental_asr/tests.rs` 测试布局，保留 TaskSpawner 门禁原有强度。
 
-UI 的两个 Linux WebKit 时序问题改为测量确定的动画时间轴及浏览器真实滚动停稳，而非假设 CI 必须在固定毫秒内提供足够帧数。八张 Linux 基线来自 [首轮 CI](https://github.com/Open-Less/openless/actions/runs/38675183147) 的实际渲染，已检查字体、表单、计数、布局和深浅主题。后续 CI 结果需独立确认，不以本机通过代替。
+UI 的两个 Linux WebKit 时序问题改为测量确定的动画时间轴及浏览器真实滚动停稳，而非假设 CI 必须在固定毫秒内提供足够帧数。八张 Linux 基线来自 [首轮 CI](https://github.com/Open-Less/openless/actions/runs/38675183147) 的实际渲染，已检查字体、表单、计数、布局和深浅主题。
+
+最终产品代码 `edff8913` 的 [完整 CI](https://github.com/Open-Less/openless/actions/runs/38677199261) 已全部通过：Windows checks、macOS checks、macOS Rust 1.88 MSRV、Linux Core/egui 与 deb/rpm 检查、Android cargo check、Chromium/WebKit UI，以及改动范围检查。它们是 GitHub runner 的编译/自动测试证据，不等同于真实设备、安装升级或公开公证分发验收。
 
 ## 本地安装包
 
@@ -92,13 +95,13 @@ APPLE_SIGNING_IDENTITY=- INSTALL=0 CARGO_BUILD_JOBS=2 ./scripts/build-mac.sh
 Release 主程序：74,479,344 字节，SHA-256：
 
 ```text
-01a876220bd56002e374f7c23cfebec2e520c591ed84f4807269eab8319d7086
+d73474fbc663d072b9810d58a5e7a4f1d760a3465ce9d048f696ad28564f1a5b
 ```
 
-DMG：28,887,011 字节，SHA-256：
+DMG：28,887,027 字节，SHA-256：
 
 ```text
-3693c89c2e94a3b6480f09bbc8d429b9e9ffc5b289fe341eeaae2d89c749ce24
+765bf5bb13b3e5e2e408d4f564b660f14764474e8d73cbf7abcc13b70adbb762
 ```
 
 debug 验收主程序 SHA-256：
@@ -111,6 +114,6 @@ debug 验收主程序 SHA-256：
 
 - 本地包为 **ad-hoc 签名，未做 Apple 公证**，不等同于已获 Gatekeeper 认可的公开发行包。
 - 真实推理来自指定版本 debug `.app` 的隔离验收入口；Release 完成构建和产物验证，但没有用真实用户配置启动正式 UI 或进行真实麦克风/其他应用输入验收。
-- 本机没有 Windows 环境，未进行 Windows SDK/设备执行。
-- Linux host 依赖仅在 Linux target 中声明，直接在 macOS 上运行其测试会因 CPAL / Wayland 等缺失而失败；Docker daemon 未运行。因此 Linux 原生构建与运行交由 PR 的 Linux CI/后续设备验收，不能记为本地成功。
+- 本机没有 Windows 环境；Windows 编译、后端自动测试和 MSRV 已由 CI 通过，仍未进行真实 Windows 设备上的麦克风、SDK 推理或目标应用输入验收。
+- Linux host 依赖仅在 Linux target 中声明，直接在 macOS 上运行其测试会因 CPAL / Wayland 等缺失而失败；Docker daemon 未运行。Linux 原生构建、Core/egui 自动测试和 deb/rpm 检查已由 CI 通过，不记为本机或 Linux 桌面实机验收。
 - 已有 FFI 声明、弃用和 window-vibrancy 链接警告仍存在，不把消除这些无关警告当成本次发布的完成条件。
