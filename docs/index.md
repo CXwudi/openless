@@ -35,7 +35,8 @@
 - [Tauri CSP 边界](tauri-csp.md)
 - [macOS 实验性本地语音模型](experimental-local-asr.md)：三模型、旧版下架、升级清理和隔离验收。
 - [本地 ASR 生命周期](local-asr-lifecycle.md)：下载、选择和推理状态的边界。
-- [本地 ASR 验收记录](local-asr-verification.md)：真实三模型、进程退出、测试结果与安装包校验值。
+- [本地 ASR 验收记录](local-asr-verification.md)：整合前的真实三模型与生命周期验证。
+- [桌面 beta.5 整合验收](desktop-beta5-integration.md)：合并来源、指定版本、本地测试及最终安装包。
 - [旧 qwen-asr 子模块说明（已下架）](qwen-asr-submodule-upgrade-checklist.md)
 
 ## 验证入口（在 `openless-all/app` 执行）

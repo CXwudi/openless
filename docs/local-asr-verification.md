@@ -1,5 +1,7 @@
 # macOS 本地 ASR 下架与实验模型验收
 
+> 这是桌面分支整合前的历史验收记录，产物版本为 `2.0.0-Beta.4+build.20260930`。后续构建会覆盖相同的 `.app` 路径；当前 `2.0.0-beta-a.beta.5+build.20261015-bd` 的结果与校验值以 [桌面整合验收](desktop-beta5-integration.md) 为准。
+
 验收时间：2026-10-15（Apple Silicon，macOS 27.0.1）。代码位于当前未提交工作区；不是已发布版本的验收声明。功能与复现入口见 [实验性本地语音模型](experimental-local-asr.md)。
 
 ## 结果
