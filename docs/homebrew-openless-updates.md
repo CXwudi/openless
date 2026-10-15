@@ -6,6 +6,8 @@
 
 脚本从 ARM/Intel DMG 的真实文件名读取完整版本，检查两个架构一致且与 tag 对应，再计算 SHA-256 并更新默认分支的 `Casks/openless.rb`。tag 不带 `+build`，DMG 文件名保留日期构建号；1.x 保持 Monterey，2.x 使用与 Host 对应的 Sonoma。
 
+权限前提：当前 `Protect #beta` 规则仅允许 OrganizationAdmin bypass，默认 `GITHUB_TOKEN` 不能直推。无人值守同步须配置仓库 Secret `HOMEBREW_CASK_ADMIN_TOKEN`，由组织管理员提供、只授权此仓库 Contents read/write；不修改分支保护，不在聊天或日志暴露值。未配置且确有更新时工作流明确失败并提示，不能把准备好文件当作已同步；cask 已被管理员更新时则幂等通过。此 Secret 是外部配置前提，不由代码自证已经存在。
+
 手动恢复同步（不重建包）：
 
 ```sh
