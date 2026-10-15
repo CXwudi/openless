@@ -66,7 +66,7 @@ Ubuntu CI 执行完整交互、几何、生命周期和像素比较，不跳过�
 
 首轮 macOS checks 与 Rust 1.88 MSRV 已通过。Windows 的版本契约在 CRLF checkout 上未匹配 Cargo.lock，已统一文本换行；Android 发现 Foundry 桌面命令模块被错误编译进移动端，已像其余本地 ASR 模块一样以 `not(mobile)` 限定声明和导出，没有添加移动端空壳。Linux Core / egui 测试已通过，但运行时边界脚本未识别通过 `#[path]` 命名的独立测试模块；现改为标准 `experimental_asr/tests.rs` 测试布局，保留 TaskSpawner 门禁原有强度。
 
-UI 的两个 Linux WebKit 时序问题改为测量确定的动画时间轴及浏览器真实滚动停稳，而非假设 CI 必须在固定毫秒内提供足够帧数。八张 Linux 基线来自 [首轮 CI](https://github.com/Open-Less/openless/actions/runs/38675183147) 的实际渲染，已检查字体、表单、计数、布局和深浅主题。
+UI 的两个 Linux WebKit 时序问题改为测量确定的动画时间轴及浏览器真实滚动停稳，而非假设 CI 必须在固定毫秒内提供足够帧数。文档提交后的复核又发现旧探针可能漏掉短动画，且会暂停、回拨应用自己的动画；现于动画创建时捕获，先验证其自然结束和图层释放，再用独立副本测量实际 DOM 中间状态，不再干预业务动画的时钟/finished 生命周期。该探针在本机双浏览器连续 20 次通过，业务代码与安装包未改。八张 Linux 基线来自 [首轮 CI](https://github.com/Open-Less/openless/actions/runs/38675183147) 的实际渲染，已检查字体、表单、计数、布局和深浅主题。
 
 最终产品代码 `edff8913` 的 [完整 CI](https://github.com/Open-Less/openless/actions/runs/38677199261) 已全部通过：Windows checks、macOS checks、macOS Rust 1.88 MSRV、Linux Core/egui 与 deb/rpm 检查、Android cargo check、Chromium/WebKit UI，以及改动范围检查。它们是 GitHub runner 的编译/自动测试证据，不等同于真实设备、安装升级或公开公证分发验收。
 

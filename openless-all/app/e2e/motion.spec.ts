@@ -15,88 +15,112 @@ test.afterEach(async ({ page }) => {
 test('settings entrance exposes its starting pose, interpolates and releases its layer', async ({
   page,
 }) => {
+  type Frame = { opacity: number; y: number; scale: number };
+  type ProbeWindow = Window & {
+    settingsEntranceProbe: {
+      entries: {
+        element: HTMLElement;
+        animation: Animation;
+        initial: Frame;
+        completed: boolean;
+        cancelled: boolean;
+      }[];
+      restore: () => void;
+    };
+  };
   await page.evaluate(() => {
-    const probe = window as Window & {
-      settingsEntranceFrames: { opacity: number; y: number; scale: number }[];
-      settingsEntranceComplete: boolean;
+    const original = Element.prototype.animate;
+    const probe: ProbeWindow['settingsEntranceProbe'] = {
+      entries: [],
+      restore: () => {
+        Element.prototype.animate = original;
+      },
     };
-    probe.settingsEntranceFrames = [];
-    probe.settingsEntranceComplete = false;
-    let sampled = false;
-    const deadline = performance.now() + 15_000;
-    const capture = () => {
-      if (sampled || performance.now() >= deadline) return;
-      const panel = document.querySelector<HTMLElement>('.ol-settings-surface');
-      if (!panel) return;
-      const animation = panel.getAnimations().find((entry) => entry.id === 'ol-surface-enter');
-      if (!animation) {
-        requestAnimationFrame(capture);
-        return;
-      }
-      sampled = true;
-      observer.disconnect();
-      // Seek the real effect on the real element. Linux WebKit can deliver just
-      // the first and last wall-clock frame under load; missing an intermediate
-      // sample is not evidence that interpolation failed.
-      const age = animation.currentTime;
-      const duration = Number(animation.effect!.getTiming().duration);
-      animation.pause();
-      for (const fraction of [0, 0.1, 0.2, 0.4, 0.6, 0.8, 0.95]) {
-        animation.currentTime = duration * fraction;
-        const style = getComputedStyle(panel);
+    (window as ProbeWindow).settingsEntranceProbe = probe;
+    // Capture creation, not a later DOM scan that may miss a short-lived effect.
+    Element.prototype.animate = function (keyframes, options) {
+      const animation = original.call(this, keyframes, options);
+      if (this instanceof HTMLElement && this.matches('.ol-settings-surface')) {
+        const style = getComputedStyle(this);
         const transform = new DOMMatrixReadOnly(style.transform);
-        probe.settingsEntranceFrames.push({
-          opacity: Number(style.opacity),
-          y: transform.m42,
-          scale: transform.m11,
-        });
+        const entry = {
+          element: this,
+          animation,
+          initial: { opacity: Number(style.opacity), y: transform.m42, scale: transform.m11 },
+          completed: false,
+          cancelled: false,
+        };
+        probe.entries.push(entry);
+        void animation.finished.then(
+          () => {
+            entry.completed = true;
+          },
+          () => {
+            entry.cancelled = true;
+          },
+        );
       }
-      animation.currentTime = age ?? 0;
-      animation.play();
-      const finished = () => {
-        if (
-          Number(getComputedStyle(panel).opacity) === 1 &&
-          !panel.getAnimations().some((entry) => entry.id === 'ol-surface-enter')
-        ) {
-          probe.settingsEntranceComplete = true;
-          return;
-        }
-        if (performance.now() < deadline) window.setTimeout(finished, 16);
-      };
-      finished();
+      return animation;
     };
-    const observer = new MutationObserver(capture);
-    observer.observe(document.body, { subtree: true, childList: true });
   });
   await page.getByRole('button', { name: '设置', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '设置', exact: true });
+  // Let the application's own clock and finished promise complete untouched.
   await expect
     .poll(
       () =>
-        page.evaluate(
-          () => (window as Window & { settingsEntranceComplete: boolean }).settingsEntranceComplete,
-        ),
+        page.evaluate(() => {
+          const entry = (window as ProbeWindow).settingsEntranceProbe.entries.at(-1);
+          return entry
+            ? {
+                completed: entry.completed,
+                cancelled: entry.cancelled,
+                playState: entry.animation.playState,
+                currentTime: entry.animation.currentTime,
+              }
+            : { completed: false, missing: true };
+        }),
       { timeout: 15_000 },
     )
-    .toBe(true);
-  const frames = await page.evaluate(
-    () =>
-      (
-        window as Window & {
-          settingsEntranceFrames: { opacity: number; y: number; scale: number }[];
-        }
-      ).settingsEntranceFrames,
-  );
-  expect(frames[0].opacity).toBeLessThan(0.1);
-  expect(frames[0].y).toBeGreaterThan(16);
-  expect(frames[0].scale).toBeLessThan(0.97);
-  expect(frames.some((frame) => frame.opacity > 0.1 && frame.opacity < 0.9)).toBe(true);
-  expect(new Set(frames.map((frame) => frame.opacity)).size).toBeGreaterThan(3);
+    .toMatchObject({ completed: true });
   await expect(dialog).toHaveCSS('opacity', '1');
   await expect(dialog).toHaveCSS('transform', 'none');
   await expect
     .poll(() => dialog.evaluate((element) => (element as HTMLElement).style.willChange))
     .toBe('');
+  const { initial, frames } = await page.evaluate(async () => {
+    const probe = (window as ProbeWindow).settingsEntranceProbe;
+    probe.restore();
+    const entry = probe.entries.at(-1)!;
+    const effect = entry.animation.effect as KeyframeEffect;
+    // Scrub a separate copy only after the real entrance has finished. Rewinding
+    // the app's live animation changes its finished-promise lifecycle in WebKit.
+    const copy = new Animation(
+      new KeyframeEffect(entry.element, effect.getKeyframes(), effect.getTiming()),
+      document.timeline,
+    );
+    copy.pause();
+    try {
+      await copy.ready;
+      const duration = Number(effect.getTiming().duration);
+      const frames = [0, 0.1, 0.2, 0.4, 0.6, 0.8, 0.95].map((fraction) => {
+        copy.currentTime = duration * fraction;
+        const style = getComputedStyle(entry.element);
+        const transform = new DOMMatrixReadOnly(style.transform);
+        return { opacity: Number(style.opacity), y: transform.m42, scale: transform.m11 };
+      });
+      return { initial: entry.initial, frames };
+    } finally {
+      copy.cancel();
+    }
+  });
+  expect(initial.opacity).toBeLessThan(0.1);
+  expect(initial.y).toBeGreaterThan(16);
+  expect(initial.scale).toBeLessThan(0.97);
+  expect(frames.some((frame) => frame.opacity > 0.1 && frame.opacity < 0.9)).toBe(true);
+  expect(new Set(frames.map((frame) => frame.opacity)).size).toBeGreaterThan(3);
+  await expect(dialog).toHaveCSS('opacity', '1');
+  await expect(dialog).toHaveCSS('transform', 'none');
 });
 
 test('rapid return to the current page cannot leave it transparent or inert', async ({ page }) => {
