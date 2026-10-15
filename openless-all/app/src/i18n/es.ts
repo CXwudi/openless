@@ -1,6 +1,11 @@
 import type { zhCN } from './zh-CN';
 
+import { uiRefinementEn as uiRefinement } from './uiRefinement';
+import { experimentalAsrEn as experimentalAsr } from './experimentalAsr';
+
 export const es: typeof zhCN = {
+  experimentalAsr,
+  uiRefinement,
   voiceEdit: {
     title: 'Sesión de edición por voz',
     description:
@@ -1740,6 +1745,8 @@ export const es: typeof zhCN = {
         asrXiaomiMimo: 'Xiaomi MiMo ASR',
         asrIflytek: 'iFlytek ASR en tiempo real',
         asrElevenLabs: 'ElevenLabs Scribe',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
         asrSherpaOnnxLocal: 'sherpa-onnx local (experimental)',
         asrFoundryLocalWhisper: 'Whisper local (Foundry Local)',
         asrLocalWhisper: 'Whisper local (por lotes)',
@@ -2412,6 +2419,7 @@ export const es: typeof zhCN = {
     autoSaveHint: 'Los cambios se guardan automáticamente',
     backToAdvanced: 'Volver a Experimentos y extensiones',
     advancedPages: {
+      localModels: experimentalAsr.description,
       vocabularyLearning:
         'Aprender de correcciones manuales; configurar observación, confirmación y longitud.',
       lessComputer: 'Elige un agente y configura su modelo, permisos y directorio de trabajo.',

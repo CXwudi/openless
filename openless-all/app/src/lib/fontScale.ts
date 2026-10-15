@@ -33,6 +33,7 @@ export function applyFontScale(id: FontScaleId): void {
   // CSS zoom isn't in the W3C standard but WebKit/Blink both support it; Tauri desktop runs
   // Wry/WebKit, so it's fine.
   (document.documentElement.style as CSSStyleDeclaration & { zoom?: string }).zoom = String(scale);
+  document.documentElement.style.setProperty('--ol-interface-scale', String(scale));
 }
 
 export function setFontScale(id: FontScaleId, source: 'user' | 'sync-restore' = 'user'): void {

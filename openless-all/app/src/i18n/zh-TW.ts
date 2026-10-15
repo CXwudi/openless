@@ -1,7 +1,12 @@
 import type { zhCN } from './zh-CN';
 
 // Traditional Chinese resources, sharing the same copy keys as the other seven locales.
+import { uiRefinementZhCN as uiRefinement } from './uiRefinement';
+import { experimentalAsrZhTW as experimentalAsr } from './experimentalAsr';
+
 export const zhTW: typeof zhCN = {
+  experimentalAsr,
+  uiRefinement,
   voiceEdit: {
     title: '語音編輯工作階段',
     description: '口述草稿或讀取目標文字，再以多輪語音指令修改，確認後寫回輸入欄位。',
@@ -1628,6 +1633,8 @@ export const zhTW: typeof zhCN = {
         asrTencentCloud: '騰訊雲混元即時 ASR',
         asrGemini: 'Google Gemini 專用轉寫',
         asrElevenLabs: 'ElevenLabs Scribe',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
         asrSherpaOnnxLocal: '本地 sherpa-onnx（實驗性）',
         asrFoundryLocalWhisper: '本地 Whisper（Foundry Local）',
         asrLocalWhisper: '本地 Whisper（批次解碼）',
@@ -2231,6 +2238,7 @@ export const zhTW: typeof zhCN = {
     autoSaveHint: '修改後自動儲存',
     backToAdvanced: '返回實驗與擴充',
     advancedPages: {
+      localModels: experimentalAsr.description,
       vocabularyLearning: '從聽寫後的手動改詞中學習，設定觀察時長、確認時間和詞長。',
       lessComputer: '選擇 Agent，設定模型、權限與工作目錄。',
       claudeConsole: '偵測 Claude Code，並查看測試工作的執行輸出。',
@@ -2240,7 +2248,7 @@ export const zhTW: typeof zhCN = {
     descriptions: {
       general: '選擇麥克風、設定錄音方式與文字輸入，也可連接手機輸入。',
       inputMethod: '設定 Android 懸浮窗與輸入法，快速開始手機端輸入。',
-      shortcuts: '設定各功能的觸發方式，以及選取文字後的操作。',
+      shortcuts: '搜尋、分類與自訂各功能的快捷鍵。',
       services: '選擇語音辨識與文字處理服務，管理管道、本機模型和網路連線。',
       appearance: '調整主題、頁面排版和介面語言，讓閱讀更舒服。',
       privacy: '檢查系統權限與連線狀態，管理歷史、錄音和本機資料。',
@@ -2259,7 +2267,7 @@ export const zhTW: typeof zhCN = {
     },
     sections: {
       appearance: '外觀與語言',
-      shortcuts: '快捷鍵與選取文字',
+      shortcuts: '快捷鍵',
       general: '通用',
       inputMethod: '輸入方式',
       services: '服務',

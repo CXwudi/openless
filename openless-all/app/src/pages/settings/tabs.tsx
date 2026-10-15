@@ -10,6 +10,7 @@ import { RemoteInputSection } from './RemoteInputSection';
 import { ShortcutsSection } from './ShortcutsSection';
 import { SelectionWorkspaceSection } from './SelectionWorkspaceSection';
 import { LanguageSection } from './LanguageSection';
+import { TypographySection } from './TypographySection';
 import { ThemeSection } from './ThemeSection';
 import { ProvidersSection } from './ChannelList';
 import { OmniChannelSection } from './ProvidersSection';
@@ -18,6 +19,7 @@ import { MarketplaceSection } from './MarketplaceSection';
 import { PermissionsSection } from './PermissionsSection';
 import { DataStorageSection } from './DataStorageSection';
 import { CloudSyncSection } from './CloudSyncSection';
+import { ExperimentalAsrSection, type ExperimentalAsrController } from './ExperimentalAsrSection';
 import { LocalModelsSection } from './models/LocalModelsSection';
 import { LocalModelsNavContext } from './models/modelsNav';
 import { DebugToolsSection } from './DebugToolsSection';
@@ -26,6 +28,7 @@ import { CodingAgentSection } from './CodingAgentSection';
 import { ClaudeConsoleSection } from './ClaudeConsoleSection';
 import { BetaChannelSection } from './BetaChannelSection';
 import { AutoUpdateSection } from './AutoUpdateSection';
+import { StartupDiagnostics } from './StartupDiagnostics';
 import { AboutSection } from './AboutSection';
 import { getPlatformCapabilities } from '../../lib/platform';
 import { listChannels } from '../../lib/ipc';
@@ -63,6 +66,7 @@ export function GeneralTab() {
   return (
     <>
       <RecordingInputSection />
+      <SelectionWorkspaceSection showShortcut={false} />
       {showRemoteInput && <RemoteInputSection />}
     </>
   );
@@ -95,32 +99,34 @@ export function InputMethodTab() {
 export function ShortcutsTab() {
   const platformCaps = usePlatformCaps();
   if (!platformCaps?.supportsDesktopHotkey) return null;
-  return (
-    <>
-      <ShortcutsSection />
-      <SelectionWorkspaceSection />
-    </>
-  );
+  return <ShortcutsSection />;
 }
 
 export function AppearanceTab() {
   return (
     <>
       <ThemeSection />
+      <TypographySection />
       <LanguageSection />
     </>
   );
 }
 
 // AI services & models: organizes channels, local models, and network settings by current pipeline and platform capabilities.
-export function ServicesTab() {
+export function ServicesTab({
+  initialView = 'llm',
+  experimentalGuide = false,
+}: { initialView?: ServiceViewId; experimentalGuide?: boolean } = {}) {
   const { t } = useTranslation();
   const { prefs, updatePrefs } = useHotkeySettings();
   const platformCaps = usePlatformCaps();
   const showLocalModel = platformCaps?.supportsLocalAsr === true;
   const multimodal =
     prefs?.multimodalPipelineEnabled === true && prefs.pipelineMode === 'multimodal';
-  const [view, setView] = useState<ServiceViewId>('llm');
+  const [view, setView] = useState<ServiceViewId>(initialView);
+  useEffect(() => {
+    setView(initialView);
+  }, [initialView]);
   const views = availableServiceViews(showLocalModel);
   const selectedView = resolveServiceView(view, views, multimodal);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -285,7 +291,16 @@ export function ServicesTab() {
             value={showLocalModel && !multimodal ? () => setView('models') : null}
           >
             {selectedView === 'llm' && <ProvidersSection kind="llm" />}
-            {selectedView === 'asr' && <ProvidersSection kind="asr" />}
+            {selectedView === 'asr' && (
+              <>
+                {experimentalGuide && (
+                  <p role="status" className="ol-channel-local-hint">
+                    {t('experimentalAsr.channelsHint')}
+                  </p>
+                )}
+                <ProvidersSection kind="asr" />
+              </>
+            )}
             {selectedView === 'omni' && <OmniChannelSection />}
             {selectedView === 'models' && <LocalModelsSection />}
             {selectedView === 'connections' && (
@@ -329,7 +344,7 @@ export function PrivacyTab() {
             borderRadius: 999,
             background: 'var(--ol-surface)',
             color: 'var(--ol-blue)',
-            fontWeight: 600,
+            fontWeight: 'var(--ol-font-weight-semibold)',
             flexShrink: 0,
           }}
         >
@@ -351,12 +366,20 @@ export function AdvancedTab({
   pages,
   page,
   onOpenPage,
+  experimentalAsr,
+  onOpenAsr,
 }: {
   pages: AdvancedPage[];
   page: AdvancedPageId | null;
   onOpenPage: (page: AdvancedPageId) => void;
+  experimentalAsr: ExperimentalAsrController;
+  onOpenAsr: () => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const [visited, setVisited] = useState<AdvancedPageId[]>([]);
+  useEffect(() => {
+    if (page) setVisited((current) => (current.includes(page) ? current : [...current, page]));
+  }, [page]);
   return (
     <>
       <div hidden={page !== null}>
@@ -383,20 +406,25 @@ export function AdvancedTab({
           ))}
         </div>
       </div>
-      {pages.map((item) => (
-        <section
-          key={item.id}
-          hidden={page !== item.id}
-          className="ol-advanced-settings-detail"
-          aria-label={t(item.titleKey)}
-          data-ol-advanced-page={item.id}
-        >
-          {item.id === 'lessComputer' && <CodingAgentSection />}
-          {item.id === 'claudeConsole' && <ClaudeConsoleSection />}
-          {item.id === 'vocabularyLearning' && <VocabularyLearningSection />}
-          {item.id === 'debug' && <DebugToolsSection />}
-        </section>
-      ))}
+      {pages
+        .filter((item) => item.id === page || visited.includes(item.id))
+        .map((item) => (
+          <section
+            key={item.id}
+            hidden={page !== item.id}
+            className="ol-advanced-settings-detail"
+            aria-label={t(item.titleKey)}
+            data-ol-advanced-page={item.id}
+          >
+            {item.id === 'localModels' && (
+              <ExperimentalAsrSection controller={experimentalAsr} onOpenAsr={onOpenAsr} />
+            )}
+            {item.id === 'lessComputer' && <CodingAgentSection />}
+            {item.id === 'claudeConsole' && <ClaudeConsoleSection />}
+            {item.id === 'vocabularyLearning' && <VocabularyLearningSection />}
+            {item.id === 'debug' && <DebugToolsSection />}
+          </section>
+        ))}
     </>
   );
 }
@@ -409,6 +437,7 @@ export function AboutTab() {
   return (
     <>
       <AboutSection />
+      <StartupDiagnostics />
       {showUpdateControls && <BetaChannelSection />}
       {showUpdateControls && <AutoUpdateSection />}
     </>

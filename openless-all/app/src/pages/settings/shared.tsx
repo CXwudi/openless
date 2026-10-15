@@ -1,21 +1,14 @@
 // Display atoms (SettingRow / Toggle / inputStyle) and pure i18n label tables shared across settings sections.
 
-import type { CSSProperties, ReactNode } from 'react';
-import { Icon } from '../../components/Icon';
-import { Tooltip } from '../../components/Tooltip';
+import { createContext, useContext, useId, type CSSProperties, type ReactNode } from 'react';
+import { toggleGroupFeedback } from '../../lib/toggleFeedback';
+const SettingLabel = createContext<string | undefined>(undefined);
+import { Hint } from '../../components/Tooltip';
 import {
   useMobileLayout,
   useReadableLayout,
   useConservativeLayout,
 } from '../../lib/useMobileLayout';
-
-// Hintable text gets a dotted underline + help cursor, signaling "hover for an explanation".
-const hintableTextStyle: CSSProperties = {
-  cursor: 'help',
-  textDecoration: 'underline dotted',
-  textDecorationColor: 'var(--ol-ink-4)',
-  textUnderlineOffset: 3,
-};
 
 export function SectionTitle({
   children,
@@ -29,7 +22,7 @@ export function SectionTitle({
 }) {
   const titleStyle: CSSProperties = {
     fontSize: 14,
-    fontWeight: 600,
+    fontWeight: 'var(--ol-font-weight-semibold)',
     color: 'var(--ol-ink)',
     marginBottom: 6,
     letterSpacing: '-0.01em',
@@ -39,11 +32,8 @@ export function SectionTitle({
     return <div style={titleStyle}>{children}</div>;
   }
   return (
-    // display:flex shrinks the Tooltip anchor to the title text itself so the tooltip pops up next to the words.
-    <div style={{ ...titleStyle, display: 'flex' }}>
-      <Tooltip content={hint} wrap placement="bottom" focusable>
-        <span style={hintableTextStyle}>{children}</span>
-      </Tooltip>
+    <div style={titleStyle}>
+      <Hint content={hint}>{children}</Hint>
     </div>
   );
 }
@@ -70,7 +60,7 @@ export function ExperimentalSectionTitle({
             background: 'var(--ol-blue-soft)',
             color: 'var(--ol-blue)',
             fontSize: 10,
-            fontWeight: 600,
+            fontWeight: 'var(--ol-font-weight-semibold)',
             lineHeight: 1.3,
             letterSpacing: 0,
           }}
@@ -89,27 +79,28 @@ export function SectionDesc(_props: { children: ReactNode; style?: CSSProperties
 
 interface SettingRowProps {
   label: string;
-  desc?: string;
+  desc?: ReactNode;
   children: ReactNode;
   controlWidth?: number | string;
   className?: string;
 }
 
-// A setting's purpose and consequences read directly; touch and keyboard users don't depend on hover.
+// Explanations share the same dotted-label trigger, including keyboard and touch access.
 export function SettingRow({ label, desc, children, controlWidth, className }: SettingRowProps) {
+  const labelId = useId();
   const mobile = useMobileLayout();
   const readable = useReadableLayout();
   const conservative = useConservativeLayout();
   const stackLayout = mobile || readable || conservative;
   const labelStyle: CSSProperties = {
     fontSize: 14,
-    fontWeight: 500,
+    fontWeight: 'var(--ol-font-weight-medium)',
     color: 'var(--ol-ink)',
     minWidth: 0,
   };
   return (
     <div
-      className={className}
+      className={['ol-setting-row', className].filter(Boolean).join(' ')}
       style={{
         display: 'grid',
         gridTemplateColumns: stackLayout ? 'minmax(0, 1fr)' : 'minmax(0, 200px) minmax(0, 1fr)',
@@ -120,30 +111,13 @@ export function SettingRow({ label, desc, children, controlWidth, className }: S
       }}
     >
       <div style={{ minWidth: 0, alignSelf: 'center' }}>
-        {/* Inline long descriptions no longer occupy space; they collapse into the "?" next to the title,
-                    popping up on hover / click (same interaction language as the "Recording & Input" title hint). */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          <span style={{ ...labelStyle, minWidth: 0 }}>{label}</span>
-          {desc && (
-            <Tooltip content={desc} wrap placement="bottom" focusable>
-              <span
-                aria-label={desc}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 16,
-                  height: 16,
-                  borderRadius: 999,
-                  border: '0.5px solid var(--ol-line-strong)',
-                  color: 'var(--ol-ink-4)',
-                  cursor: 'help',
-                  flexShrink: 0,
-                }}
-              >
-                <Icon name="help" size={10} />
-              </span>
-            </Tooltip>
+        <div style={labelStyle}>
+          {desc ? (
+            <Hint id={labelId} content={desc}>
+              {label}
+            </Hint>
+          ) : (
+            <span id={labelId}>{label}</span>
           )}
         </div>
       </div>
@@ -160,7 +134,7 @@ export function SettingRow({ label, desc, children, controlWidth, className }: S
           gap: stackLayout ? 6 : undefined,
         }}
       >
-        {children}
+        <SettingLabel.Provider value={labelId}>{children}</SettingLabel.Provider>
       </div>
     </div>
   );
@@ -177,15 +151,20 @@ export function Toggle({
   disabled?: boolean;
   label?: string;
 }) {
+  const labelId = useContext(SettingLabel);
   return (
     <button
       type="button"
       role="switch"
+      className="ol-switch"
       aria-checked={on}
       aria-label={label}
+      aria-labelledby={label ? undefined : labelId}
       disabled={disabled}
-      onClick={() => {
-        if (!disabled) onToggle?.(!on);
+      onClick={(event) => {
+        if (disabled) return;
+        if (event.detail > 0) toggleGroupFeedback(event.currentTarget);
+        onToggle?.(!on);
       }}
       style={{
         position: 'relative',
@@ -210,13 +189,14 @@ export function Toggle({
         style={{
           position: 'absolute',
           top: 2,
-          left: on ? 18 : 2,
+          left: 2,
+          transform: on ? 'translateX(16px)' : 'translateX(0)',
           width: 16,
           height: 16,
           borderRadius: 999,
           background: 'var(--ol-toggle-knob)',
           boxShadow: '0 1px 2px rgba(0,0,0,.25), 0 0 0 0.5px rgba(0,0,0,.04)',
-          transition: 'left .16s var(--ol-motion-spring)',
+          transition: 'transform .18s var(--ol-motion-spring)',
         }}
       />
     </button>
@@ -296,6 +276,8 @@ export const ASR_LABELS = [
   { id: 'foundry-local-whisper', nameKey: 'asrFoundryLocalWhisper' },
   { id: 'local-whisper', nameKey: 'asrLocalWhisper' },
   { id: 'sherpa-onnx-local', nameKey: 'asrSherpaOnnxLocal' },
+  { id: 'experimental-sensevoice', nameKey: 'asrExperimentalSenseVoice' },
+  { id: 'experimental-embedding-gemma', nameKey: 'asrExperimentalGemma' },
   { id: 'local-qwen3-mlx', nameKey: 'asrLocalQwen3Mlx' },
   { id: 'local-qwen3-c', nameKey: 'asrLocalQwen3C' },
   { id: 'local-qwen3', nameKey: 'asrLocalQwen3' },

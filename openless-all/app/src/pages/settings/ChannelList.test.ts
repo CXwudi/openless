@@ -1,11 +1,29 @@
 import type { OS } from '../../components/WindowChrome';
 import type { ProviderDescriptor } from '../../lib/ipc';
 import {
+  channelRowViewportTop,
   channelTestMode,
   defaultChannelNameForProvider,
   presetsFor,
   shouldRecycleDraft,
 } from './ChannelList';
+
+// A scrolled settings panel must not shift drag hit testing by the scroll offset.
+const offsetParent = {
+  clientTop: 2,
+  scrollTop: 10,
+  parentElement: null,
+  getBoundingClientRect: () => ({ top: 100 }),
+} as unknown as HTMLElement;
+const scrollParent = { scrollTop: 80, parentElement: offsetParent } as HTMLElement;
+const row = {
+  offsetTop: 300,
+  offsetParent,
+  parentElement: scrollParent,
+  getBoundingClientRect: () => ({ top: 900 }),
+} as unknown as HTMLElement;
+if (channelRowViewportTop(row) !== 312)
+  throw new Error('drag hit testing must subtract ancestor scrolling and ignore FLIP translation');
 
 const localProviders = [
   'local-qwen3',

@@ -3,6 +3,7 @@
 // Callers share the exit duration with the overlay motion primitive.
 
 import { useEffect, useState } from 'react';
+import { keyboardInteraction } from './interactionMode';
 import { OVERLAY_EXIT_MS, useReducedMotion } from './motion';
 
 export function useExitMount(open: boolean, exitMs = OVERLAY_EXIT_MS) {
@@ -14,7 +15,7 @@ export function useExitMount(open: boolean, exitMs = OVERLAY_EXIT_MS) {
       return;
     }
     if (!mounted) return;
-    if (reduced) {
+    if (reduced || keyboardInteraction()) {
       setMounted(false);
       return;
     }

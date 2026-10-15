@@ -25,6 +25,7 @@ import {
   type SherpaOnnxCatalogModel,
 } from '../../../lib/localAsr';
 import { emitSaved } from '../../../lib/savedEvent';
+import { isExperimentalAsrProvider } from '../../../lib/experimentalAsr';
 import { useLocalModelsNav } from './modelsNav';
 
 /** Local engine providerType → picker data-source family. */
@@ -55,6 +56,7 @@ export function LocalModelPicker({ providerType }: { providerType: string }) {
 
   const load = useCallback(async () => {
     try {
+      if (isExperimentalAsrProvider(providerType)) return;
       if (family === 'generic') {
         const [settings, models] = await Promise.all([getLocalAsrSettings(), listLocalAsrModels()]);
         setOptions(
@@ -100,7 +102,7 @@ export function LocalModelPicker({ providerType }: { providerType: string }) {
       console.error('[local-models] failed to load picker state', error);
       setEngineNote(t('settings.providers.readFailed'));
     }
-  }, [family, t]);
+  }, [family, providerType, t]);
 
   useEffect(() => {
     void load();
@@ -146,6 +148,9 @@ export function LocalModelPicker({ providerType }: { providerType: string }) {
     }
   };
 
+  if (isExperimentalAsrProvider(providerType)) {
+    return <p className="ol-channel-local-hint">{t('experimentalAsr.manageHint')}</p>;
+  }
   if (family === 'apple') {
     return (
       <p className="ol-channel-local-hint">{t('settings.providers.localEngineNoCredentials')}</p>

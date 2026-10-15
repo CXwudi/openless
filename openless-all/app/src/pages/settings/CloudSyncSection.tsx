@@ -978,7 +978,7 @@ function ConsentForm({ busy, onConfirm }: { busy: boolean; onConfirm: () => void
     <div style={{ display: 'grid', gap: 16 }}>
       <p>{t('cloudSyncE2ee.consentDescription')}</p>
       <details>
-        <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+        <summary style={{ cursor: 'pointer', fontWeight: 'var(--ol-font-weight-semibold)' }}>
           {t('cloudSyncE2ee.scopeSummary')}
         </summary>
         <ul style={{ paddingLeft: 20, lineHeight: 1.75 }}>
@@ -1181,7 +1181,7 @@ function PasswordForm({
           borderRadius: 9,
           background: 'var(--ol-primary-solid-bg)',
           color: 'var(--ol-primary-solid-ink)',
-          fontWeight: 600,
+          fontWeight: 'var(--ol-font-weight-semibold)',
           opacity: !valid || busy ? 0.5 : 1,
         }}
       >

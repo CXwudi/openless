@@ -100,7 +100,7 @@ export function MarketplaceSection() {
             <div
               style={{
                 fontSize: 13.5,
-                fontWeight: 600,
+                fontWeight: 'var(--ol-font-weight-semibold)',
                 color: 'var(--ol-ink)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',

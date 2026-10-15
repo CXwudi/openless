@@ -1,7 +1,12 @@
 // Simplified Chinese resources — kept in sync with the product's current copy.
 // The eight locale files share one structure; add/remove keys in all of them together.
 
+import { uiRefinementZhCN as uiRefinement } from './uiRefinement';
+import { experimentalAsrZhCN as experimentalAsr } from './experimentalAsr';
+
 export const zhCN = {
+  experimentalAsr,
+  uiRefinement,
   voiceEdit: {
     title: '语音编辑会话',
     description: '口述草稿或读取目标文本，再用多轮语音指令修改，确认后写回输入框。',
@@ -1627,6 +1632,8 @@ export const zhCN = {
         asrTencentCloud: '腾讯云混元实时 ASR',
         asrGemini: 'Google Gemini 专用转写',
         asrElevenLabs: 'ElevenLabs Scribe',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
         asrSherpaOnnxLocal: '本地 sherpa-onnx（实验性）',
         asrFoundryLocalWhisper: '本地 Whisper（Foundry Local）',
         asrLocalWhisper: '本地 Whisper（批量解码）',
@@ -2231,6 +2238,7 @@ export const zhCN = {
     autoSaveHint: '修改后自动保存',
     backToAdvanced: '返回实验与扩展',
     advancedPages: {
+      localModels: experimentalAsr.description,
       vocabularyLearning: '从听写后的手动改词中学习，配置观察时长、确认时间和词长。',
       lessComputer: '选择 Agent，配置模型、权限与工作目录。',
       claudeConsole: '检测 Claude Code，并查看测试任务的运行输出。',
@@ -2240,7 +2248,7 @@ export const zhCN = {
     descriptions: {
       general: '选择麦克风、设置录音方式与文字输入，也可连接手机输入。',
       inputMethod: '配置 Android 悬浮窗和输入法，快速开始手机端输入。',
-      shortcuts: '设置各功能的触发方式，以及选中文字后的操作。',
+      shortcuts: '搜索、分类与自定义各功能的快捷键。',
       services: '选择语音识别与文字处理服务，管理渠道、本地模型和网络连接。',
       appearance: '调整主题、页面排版和界面语言，让阅读更舒服。',
       privacy: '检查系统权限与连接状态，管理历史、录音和本地数据。',
@@ -2260,7 +2268,7 @@ export const zhCN = {
 
     sections: {
       appearance: '外观与语言',
-      shortcuts: '快捷键与选区',
+      shortcuts: '快捷键',
       general: '录音与输入',
       inputMethod: '输入方式',
       services: 'AI 服务与模型',
