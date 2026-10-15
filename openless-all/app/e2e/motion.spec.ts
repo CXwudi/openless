@@ -12,7 +12,9 @@ test.afterEach(async ({ page }) => {
   expect(errors.get(page)).toEqual([]);
 });
 
-test('settings entrance paints its starting pose and progresses over time', async ({ page }) => {
+test('settings entrance exposes its starting pose, interpolates and releases its layer', async ({
+  page,
+}) => {
   await page.evaluate(() => {
     const probe = window as Window & {
       settingsEntranceFrames: { opacity: number; y: number; scale: number }[];
@@ -20,12 +22,27 @@ test('settings entrance paints its starting pose and progresses over time', asyn
     };
     probe.settingsEntranceFrames = [];
     probe.settingsEntranceComplete = false;
-    const observer = new MutationObserver(() => {
+    let sampled = false;
+    const deadline = performance.now() + 15_000;
+    const capture = () => {
+      if (sampled || performance.now() >= deadline) return;
       const panel = document.querySelector<HTMLElement>('.ol-settings-surface');
       if (!panel) return;
+      const animation = panel.getAnimations().find((entry) => entry.id === 'ol-surface-enter');
+      if (!animation) {
+        requestAnimationFrame(capture);
+        return;
+      }
+      sampled = true;
       observer.disconnect();
-      const deadline = performance.now() + 15_000;
-      const sample = () => {
+      // Seek the real effect on the real element. Linux WebKit can deliver just
+      // the first and last wall-clock frame under load; missing an intermediate
+      // sample is not evidence that interpolation failed.
+      const age = animation.currentTime;
+      const duration = Number(animation.effect!.getTiming().duration);
+      animation.pause();
+      for (const fraction of [0, 0.1, 0.2, 0.4, 0.6, 0.8, 0.95]) {
+        animation.currentTime = duration * fraction;
         const style = getComputedStyle(panel);
         const transform = new DOMMatrixReadOnly(style.transform);
         probe.settingsEntranceFrames.push({
@@ -33,18 +50,22 @@ test('settings entrance paints its starting pose and progresses over time', asyn
           y: transform.m42,
           scale: transform.m11,
         });
+      }
+      animation.currentTime = age ?? 0;
+      animation.play();
+      const finished = () => {
         if (
-          Number(style.opacity) === 1 &&
-          !panel.getAnimations().some((animation) => animation.id === 'ol-surface-enter')
+          Number(getComputedStyle(panel).opacity) === 1 &&
+          !panel.getAnimations().some((entry) => entry.id === 'ol-surface-enter')
         ) {
           probe.settingsEntranceComplete = true;
           return;
         }
-        // Sample through the delayed start and completion without requiring a fixed frame rate.
-        if (performance.now() < deadline) window.setTimeout(sample, 16);
+        if (performance.now() < deadline) window.setTimeout(finished, 16);
       };
-      requestAnimationFrame(sample);
-    });
+      finished();
+    };
+    const observer = new MutationObserver(capture);
     observer.observe(document.body, { subtree: true, childList: true });
   });
   await page.getByRole('button', { name: '设置', exact: true }).click();

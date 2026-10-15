@@ -587,7 +587,6 @@ impl ExperimentalAsrService {
     }
 }
 #[cfg(test)]
-#[path = "experimental_asr_tests.rs"]
 mod tests;
 
 fn error(message: impl Into<String>) -> BackendError {

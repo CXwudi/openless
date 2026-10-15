@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
 
+// Playwright selects reviewed references per browser and runner OS: system
+// font rasterization is intentionally not shared between macOS and Ubuntu.
+
 for (const theme of ['dark', 'light'] as const) {
   test(`settings visual baseline · ${theme}`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });

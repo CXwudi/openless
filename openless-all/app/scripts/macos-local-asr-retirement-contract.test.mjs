@@ -9,7 +9,10 @@ assert.match(
   /store\.models_root_dir\(\)[^]*?default_models_root\(\)[^]*?retire_macos_local_models/,
 );
 assert.doesNotMatch(adapters, /register\(provider_type[^]*?qwen_cache/);
-const router = adapters.slice(adapters.indexOf('let native_asr:'), adapters.indexOf('let polisher ='));
+const router = adapters.slice(
+  adapters.indexOf('let native_asr:'),
+  adapters.indexOf('let polisher ='),
+);
 assert.doesNotMatch(router, /LOCAL_QWEN3|LOCAL_WHISPER|APPLE_SPEECH|Qwen|Whisper/);
 assert.match(adapters, /cfg\(target_os = "windows"\)\]\s+struct TauriNativeTranscriptionEngine/);
 const availability = adapters.slice(
@@ -17,6 +20,11 @@ const availability = adapters.slice(
   adapters.indexOf('fn inspect_native_models'),
 );
 assert.match(availability, /LocalAsrRuntime::Generic => false/);
+
+// Foundry is a desktop adapter; mobile must not compile its file-manager calls.
+const commands = read('src-tauri/src/commands/mod.rs');
+assert.match(commands, /#\[cfg\(not\(mobile\)\)\]\s+mod foundry_asr;/);
+assert.match(commands, /#\[cfg\(not\(mobile\)\)\]\s+pub use foundry_asr::\*;/);
 
 const service = read('crates/openless-core/src/experimental_asr.rs');
 const run = service.slice(

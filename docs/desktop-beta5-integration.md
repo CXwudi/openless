@@ -3,7 +3,7 @@
 - 版本：`2.0.0-beta-a.beta.5+build.20261015-bd`（按请求保留完整大小写与后缀）。
 - 合并分支：`integration/desktop-beta-a.beta.5-20261015-bd`；PR 目标：`beta`。
 - 基线：`origin/beta` 的 `0454dc56`。
-- 代码检查点：`5637abee8c92d1dbff6afecfdd0877771bcb8223`；其后验收记录变更仅涉及文档。
+- 初次产品代码检查点：`5637abee8c92d1dbff6afecfdd0877771bcb8223`；后续 CI 修复限定于桌面模块编译边界、测试布局/时序及跨平台截图，没有修改三模型推理实现。
 - 验收环境：2026-10-15，Apple Silicon / macOS 27.0.1。
 
 ## 合并来源与边界
@@ -43,6 +43,8 @@
 | Release `.app` / DMG | 构建及签名、资源、版本、DMG 校验通过 |
 | 变更组件 Prettier / `git diff --check` | 通过 |
 
+Ubuntu CI 执行完整交互、几何、生命周期和像素比较，不跳过视觉用例。针对系统字体栅格化差异，从首轮 CI 的实际产物逐张检查并增加了八张 Linux / 浏览器独立基线，不复用 macOS 像素，也不提高容差。macOS / Windows 模型入口测试显式声明产品 OS，不依赖 CI 物理平台。
+
 合并后的初次 UI 回归暴露了旧版断言与新边界的冲突，已修复并重跑完整套件：退休模型入口不再作为可点击选项；导航按钮的统计包含合法外层提示；并行模型下载的测试等待三个完成项再确认；拖动用例先滚动到目标并验证真实位移再松手。仅更新了经截图检查确认的四张快捷键基线，变化为 Beta 未授权时隐藏 Less Computer 后的计数/行位移；没有提高截图容差，字体截图保持原样，最后一轮不带更新快照参数通过。
 
 ### 真实模型与生命周期
@@ -58,6 +60,12 @@
 7. 结束后无残留 TextStream worker 或 TCP 7890 监听。
 
 主要日志与机器可读结果：`/tmp/openless-desktop-beta5-20261015-bd/` 下的 `core.log`、`native-tests-final.log`、`frontend.log`、`backend.log`、`e2e.log`、`native-acceptance.log`、`release-package.log`、`artifacts.log`、`verified.json`。该目录可能被系统清理，本文保留主要结果。
+
+## 首轮 CI 发现与修复
+
+首轮 macOS checks 与 Rust 1.88 MSRV 已通过。Windows 的版本契约在 CRLF checkout 上未匹配 Cargo.lock，已统一文本换行；Android 发现 Foundry 桌面命令模块被错误编译进移动端，已像其余本地 ASR 模块一样以 `not(mobile)` 限定声明和导出，没有添加移动端空壳。Linux Core / egui 测试已通过，但运行时边界脚本未识别通过 `#[path]` 命名的独立测试模块；现改为标准 `experimental_asr/tests.rs` 测试布局，保留 TaskSpawner 门禁原有强度。
+
+UI 的两个 Linux WebKit 时序问题改为测量确定的动画时间轴及浏览器真实滚动停稳，而非假设 CI 必须在固定毫秒内提供足够帧数。八张 Linux 基线来自 [首轮 CI](https://github.com/Open-Less/openless/actions/runs/38675183147) 的实际渲染，已检查字体、表单、计数、布局和深浅主题。后续 CI 结果需独立确认，不以本机通过代替。
 
 ## 本地安装包
 

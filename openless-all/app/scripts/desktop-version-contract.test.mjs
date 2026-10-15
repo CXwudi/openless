@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const app = new URL('../', import.meta.url);
-const read = (path) => readFile(new URL(path, app), 'utf8');
+const read = async (path) => (await readFile(new URL(path, app), 'utf8')).replace(/\r\n/g, '\n');
 const version = '2.0.0-beta-a.beta.5+build.20261015-bd';
 const pkg = JSON.parse(await read('package.json'));
 const lock = JSON.parse(await read('package-lock.json'));

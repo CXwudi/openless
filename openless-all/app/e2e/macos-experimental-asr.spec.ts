@@ -1,6 +1,25 @@
 import { expect, test, type Page } from '@playwright/test';
 
-async function settings(page: Page) {
+async function settings(page: Page, os: 'mac' | 'win' = 'mac') {
+  // The product OS is an explicit test input, independent of the CI runner.
+  await page.addInitScript((os) => {
+    const mac = os === 'mac';
+    Object.defineProperty(navigator, 'platform', {
+      configurable: true,
+      get: () => (mac ? 'MacIntel' : 'Win32'),
+    });
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      get: () =>
+        mac
+          ? 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)'
+          : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+    });
+    Object.defineProperty(navigator, 'userAgentData', {
+      configurable: true,
+      get: () => ({ platform: mac ? 'macOS' : 'Windows' }),
+    });
+  }, os);
   await page.goto('/');
   await page.getByRole('button', { name: '设置', exact: true }).click();
 }
@@ -11,18 +30,25 @@ async function experiments(page: Page) {
   await entries.first().click();
 }
 
-test('Mac removes legacy manager and exposes lazy experiments first with memory warning', async ({ page }) => {
+test('Mac removes legacy manager and exposes lazy experiments first with memory warning', async ({
+  page,
+}) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await settings(page);
   await page.getByRole('button', { name: 'AI 服务与模型', exact: true }).click();
-  const retired = page.locator('.ol-service-views').getByRole('button', { name: '本地模型', exact: true });
+  const retired = page
+    .locator('.ol-service-views')
+    .getByRole('button', { name: '本地模型', exact: true });
   await expect(retired).toBeDisabled();
   await retired.locator('..').hover();
   await expect(page.getByRole('tooltip')).toHaveText('该功能已下架，请去实验性与扩展里面');
   await experiments(page);
   const stream = page.locator('[data-experimental-model="text-stream"]');
-  await expect(page.locator('[data-experimental-model]').first()).toHaveAttribute('data-experimental-model', 'text-stream');
+  await expect(page.locator('[data-experimental-model]').first()).toHaveAttribute(
+    'data-experimental-model',
+    'text-stream',
+  );
   await expect(stream).toContainText('推荐 · 实时流式');
   await stream.getByRole('button', { name: /TextStream/ }).hover();
   await expect(page.getByRole('tooltip')).toContainText('localhost:7890/stream');
@@ -50,7 +76,10 @@ test('Mac removes legacy manager and exposes lazy experiments first with memory 
   await expect(page.getByRole('heading', { name: '语音识别渠道', exact: true })).toBeVisible();
   await expect(page.locator('[data-channel-provider="experimental-sensevoice"]')).toHaveCount(1);
   await expect(page.locator('[data-channel-provider="experimental-textstream"]')).toHaveCount(1);
-  await expect(page.locator('[data-channel-provider="volcengine"]').first()).toHaveAttribute('data-channel-active', 'true');
+  await expect(page.locator('[data-channel-provider="volcengine"]').first()).toHaveAttribute(
+    'data-channel-active',
+    'true',
+  );
   await experiments(page);
   await sense.getByRole('switch').click();
   await expect(sense.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
@@ -59,29 +88,36 @@ test('Mac removes legacy manager and exposes lazy experiments first with memory 
   expect(errors).toEqual([]);
 });
 
-test('closing settings does not auto-enable a channel or lose completion guidance', async ({ page }) => {
+test('closing settings does not auto-enable a channel or lose completion guidance', async ({
+  page,
+}) => {
   await settings(page);
   await experiments(page);
   await page.getByRole('switch', { name: 'SenseVoice Small', exact: true }).click();
-  await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: '关闭', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: '设置', exact: true })
+    .getByRole('button', { name: '关闭', exact: true })
+    .click();
   await page.waitForTimeout(2100);
   await page.getByRole('button', { name: '设置', exact: true }).click();
   const guide = page.getByRole('dialog', { name: '下载完成，还需选择语音渠道' });
   await expect(guide).toBeVisible();
   await guide.getByRole('button', { name: '稍后再说' }).click();
   await experiments(page);
-  await expect(page.getByRole('switch', { name: 'SenseVoice Small', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('switch', { name: 'SenseVoice Small', exact: true })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
 });
 
-test('Windows retains its model manager and does not expose the Mac experiments entry', async ({ page }) => {
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
-    Object.defineProperty(navigator, 'userAgent', { get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' });
-    Object.defineProperty(navigator, 'userAgentData', { get: () => ({ platform: 'Windows' }) });
-  });
-  await settings(page);
+test('Windows retains its model manager and does not expose the Mac experiments entry', async ({
+  page,
+}) => {
+  await settings(page, 'win');
   await page.getByRole('button', { name: 'AI 服务与模型', exact: true }).click();
-  await expect(page.locator('.ol-service-views').getByRole('button', { name: '本地模型', exact: true })).toBeVisible();
+  await expect(
+    page.locator('.ol-service-views').getByRole('button', { name: '本地模型', exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: '实验与扩展', exact: true }).click();
   await expect(page.locator('[data-ol-advanced-entry="localModels"]')).toHaveCount(0);
 });

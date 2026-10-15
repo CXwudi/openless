@@ -56,6 +56,7 @@ mod dictation;
 mod dictionary;
 #[cfg(not(mobile))]
 mod experimental_asr;
+#[cfg(not(mobile))]
 mod foundry_asr;
 mod github_oauth;
 mod history;
@@ -89,6 +90,7 @@ pub use dictation::*;
 pub use dictionary::*;
 #[cfg(not(mobile))]
 pub use experimental_asr::*;
+#[cfg(not(mobile))]
 pub use foundry_asr::*;
 pub use github_oauth::*;
 pub use history::*;

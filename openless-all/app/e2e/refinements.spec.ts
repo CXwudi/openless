@@ -56,7 +56,14 @@ test('native scrolling has no JS wheel interception and is stable when stopped',
   await content.hover();
   await page.mouse.wheel(0, 450);
   await expect.poll(() => content.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  await page.waitForTimeout(250);
+  // Let the browser's own wheel smoothing settle; its duration is OS-specific.
+  await expect
+    .poll(async () => {
+      const before = await content.evaluate((el) => el.scrollTop);
+      await page.waitForTimeout(120);
+      return Math.abs((await content.evaluate((el) => el.scrollTop)) - before);
+    })
+    .toBe(0);
   const stopped = await content.evaluate((el) => el.scrollTop);
   await page.waitForTimeout(160);
   expect(await content.evaluate((el) => el.scrollTop)).toBe(stopped);
@@ -288,9 +295,11 @@ test('swipe departure is directional, removable and undoable', async ({ page }) 
   await page.mouse.move(rect.x + 100, rect.y + 70);
   await page.mouse.down();
   await page.mouse.move(rect.x + 270, rect.y + 70, { steps: 12 });
-  await expect.poll(() => card.evaluate((element) =>
-    new DOMMatrixReadOnly(getComputedStyle(element).transform).m41,
-  )).toBeGreaterThan(120);
+  await expect
+    .poll(() =>
+      card.evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).m41),
+    )
+    .toBeGreaterThan(120);
   await page.mouse.up();
   await expect(card).toHaveCount(0);
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
