@@ -1638,8 +1638,6 @@ export const zhTW: typeof zhCN = {
         asrTencentCloud: '騰訊雲混元即時 ASR',
         asrGemini: 'Google Gemini 專用轉寫',
         asrElevenLabs: 'ElevenLabs Scribe',
-        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
-        asrExperimentalGemma: experimentalAsr.gemmaLabel,
         asrSherpaOnnxLocal: '本地 sherpa-onnx（實驗性）',
         asrFoundryLocalWhisper: '本地 Whisper（Foundry Local）',
         asrLocalWhisper: '本地 Whisper（批次解碼）',

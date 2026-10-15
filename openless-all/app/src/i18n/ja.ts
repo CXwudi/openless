@@ -1710,8 +1710,6 @@ export const ja: typeof zhCN = {
         asrGemini: 'Google Gemini Transcribe',
         asrTencentCloud: 'Tencent Cloud Hunyuan リアルタイム ASR',
         asrElevenLabs: 'ElevenLabs Scribe',
-        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
-        asrExperimentalGemma: experimentalAsr.gemmaLabel,
         asrSherpaOnnxLocal: 'ローカル sherpa-onnx（実験的）',
         asrFoundryLocalWhisper: 'ローカル Whisper（Foundry Local）',
         asrLocalWhisper: 'ローカル Whisper（バッチ）',

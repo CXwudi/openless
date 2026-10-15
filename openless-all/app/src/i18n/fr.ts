@@ -1775,8 +1775,6 @@ export const fr: typeof zhCN = {
         asrXiaomiMimo: 'Xiaomi MiMo ASR',
         asrIflytek: 'iFlytek ASR en temps réel',
         asrElevenLabs: 'ElevenLabs Scribe',
-        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
-        asrExperimentalGemma: experimentalAsr.gemmaLabel,
         asrSherpaOnnxLocal: 'sherpa-onnx local (expérimental)',
         asrFoundryLocalWhisper: 'Whisper local (Foundry Local)',
         asrLocalWhisper: 'Whisper local (par lots)',

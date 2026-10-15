@@ -1637,8 +1637,6 @@ export const zhCN = {
         asrTencentCloud: '腾讯云混元实时 ASR',
         asrGemini: 'Google Gemini 专用转写',
         asrElevenLabs: 'ElevenLabs Scribe',
-        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
-        asrExperimentalGemma: experimentalAsr.gemmaLabel,
         asrSherpaOnnxLocal: '本地 sherpa-onnx（实验性）',
         asrFoundryLocalWhisper: '本地 Whisper（Foundry Local）',
         asrLocalWhisper: '本地 Whisper（批量解码）',

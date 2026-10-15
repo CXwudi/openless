@@ -24,7 +24,6 @@ import {
   type SherpaOnnxCatalogModel,
 } from '../../../lib/localAsr';
 import { emitSaved } from '../../../lib/savedEvent';
-import { isExperimentalAsrProvider } from '../../../lib/experimentalAsr';
 import { useLocalModelsNav } from './modelsNav';
 import { isExperimentalAsrProvider, isRetiredMacAsrProvider } from '../../../lib/experimentalAsr';
 import { detectOS } from '../../../components/WindowChrome';

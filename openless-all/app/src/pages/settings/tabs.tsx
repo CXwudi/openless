@@ -370,8 +370,6 @@ export function AdvancedTab({
   experimentalAsr,
   onOpenAsr,
 }: {
-  experimentalAsr: ExperimentalAsrController;
-  onOpenAsr: () => Promise<void>;
   pages: AdvancedPage[];
   page: AdvancedPageId | null;
   onOpenPage: (page: AdvancedPageId) => void;
@@ -409,7 +407,7 @@ export function AdvancedTab({
           ))}
         </div>
       </div>
-      {pages.map((item) => (
+      {pages.filter((item) => visited.includes(item.id)).map((item) => (
         <section
           key={item.id}
           hidden={page !== item.id}

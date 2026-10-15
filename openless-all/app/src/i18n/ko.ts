@@ -1698,8 +1698,6 @@ export const ko: typeof zhCN = {
         asrGemini: 'Google Gemini Transcribe',
         asrTencentCloud: 'Tencent Cloud Hunyuan 실시간 ASR',
         asrElevenLabs: 'ElevenLabs Scribe',
-        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
-        asrExperimentalGemma: experimentalAsr.gemmaLabel,
         asrSherpaOnnxLocal: '로컬 sherpa-onnx(실험적)',
         asrFoundryLocalWhisper: '로컬 Whisper(Foundry Local)',
         asrLocalWhisper: '로컬 Whisper(배치)',

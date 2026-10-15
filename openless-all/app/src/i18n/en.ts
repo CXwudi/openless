@@ -1723,8 +1723,6 @@ export const en: typeof zhCN = {
         asrTencentCloud: 'Tencent Cloud Hunyuan Realtime ASR',
         asrGemini: 'Google Gemini Transcribe',
         asrElevenLabs: 'ElevenLabs Scribe',
-        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
-        asrExperimentalGemma: experimentalAsr.gemmaLabel,
         asrSherpaOnnxLocal: 'Local sherpa-onnx (Experimental)',
         asrFoundryLocalWhisper: 'Local Whisper (Foundry Local)',
         asrLocalWhisper: 'Local Whisper (batch)',
