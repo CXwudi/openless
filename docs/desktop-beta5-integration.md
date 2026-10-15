@@ -1,5 +1,7 @@
 # 桌面 beta.5 整合与本地验收
 
+> 本文记录最初整合与当时安装包。后续用户反馈发现的首录音阻塞、交互问题及本轮工作树修复见 [回归修复记录](beta5-regression-repair.md)；下列旧安装包与哈希不包含这些后续修复。
+
 - 版本：`2.0.0-beta-a.beta.5+build.20261015-bd`（按请求保留完整大小写与后缀）。
 - 合并分支：`integration/desktop-beta-a.beta.5-20261015-bd`；PR 目标：`beta`。
 - 基线：`origin/beta` 的 `0454dc56`。

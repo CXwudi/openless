@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useId, type CSSProperties, type ReactNode } from 'react';
 import { toggleGroupFeedback } from '../../lib/toggleFeedback';
+import { Switch } from '@base-ui/react/switch';
 const SettingLabel = createContext<string | undefined>(undefined);
 import { Hint } from '../../components/Tooltip';
 import {
@@ -153,18 +154,16 @@ export function Toggle({
 }) {
   const labelId = useContext(SettingLabel);
   return (
-    <button
-      type="button"
-      role="switch"
+    <Switch.Root
       className="ol-switch"
-      aria-checked={on}
+      checked={on}
+      onCheckedChange={(next) => onToggle?.(next)}
       aria-label={label}
       aria-labelledby={label ? undefined : labelId}
       disabled={disabled}
       onClick={(event) => {
         if (disabled) return;
         if (event.detail > 0) toggleGroupFeedback(event.currentTarget);
-        onToggle?.(!on);
       }}
       style={{
         position: 'relative',
@@ -185,7 +184,7 @@ export function Toggle({
         transition: 'background 0.16s var(--ol-motion-quick)',
       }}
     >
-      <span
+      <Switch.Thumb
         style={{
           position: 'absolute',
           top: 2,
@@ -199,7 +198,7 @@ export function Toggle({
           transition: 'transform .18s var(--ol-motion-spring)',
         }}
       />
-    </button>
+    </Switch.Root>
   );
 }
 

@@ -4,6 +4,9 @@
 mod install;
 #[path = "textstream/protocol.rs"]
 mod protocol;
+#[path = "textstream/process.rs"]
+mod process;
+use process::Process;
 
 use base64::Engine;
 use futures_util::future::BoxFuture;
@@ -16,7 +19,7 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     os::unix::process::CommandExt,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Condvar, Mutex, Weak,
@@ -31,48 +34,6 @@ fn error(message: impl std::fmt::Display) -> BackendError {
     BackendError::new(BackendErrorCode::Provider, message.to_string())
 }
 
-struct Process {
-    child: Mutex<Option<Child>>,
-}
-impl Process {
-    fn running(&self) -> bool {
-        self.child
-            .lock()
-            .unwrap()
-            .as_mut()
-            .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
-    }
-    fn stop(&self) {
-        if let Some(mut child) = self.child.lock().unwrap().take() {
-            if matches!(child.try_wait(), Ok(None)) {
-                // PID cannot be reused while our unreaped Child owns it.
-                unsafe {
-                    libc::kill(-(child.id() as i32), libc::SIGKILL);
-                }
-                let _ = child.kill();
-            }
-            let _ = child.wait();
-        }
-    }
-    fn completed(&self) -> Result<(), BackendError> {
-        let mut child = self
-            .child
-            .lock()
-            .unwrap()
-            .take()
-            .ok_or_else(|| error("TextStream was cancelled"))?;
-        let status = child.wait().map_err(error)?;
-        if !status.success() {
-            return Err(error(format!("TextStream worker exited: {status}")));
-        }
-        Ok(())
-    }
-}
-impl Drop for Process {
-    fn drop(&mut self) {
-        self.stop();
-    }
-}
 struct StartupGuard(Option<Arc<Process>>);
 impl Drop for StartupGuard {
     fn drop(&mut self) {

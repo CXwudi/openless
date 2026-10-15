@@ -66,7 +66,7 @@
 }
 .ol-select-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 12px;
+  grid-template-columns: minmax(0, 1fr) auto 12px;
   align-items: center;
   gap: 8px;
   padding: 7px 10px;
@@ -90,10 +90,52 @@
 }
 .ol-select-check {
   display: flex;
+  grid-column: 3;
+}
+.ol-select-trailing {
+  display: flex;
+  align-items: center;
   grid-column: 2;
 }
-html[data-ol-input='keyboard'] .ol-select-popup {
-  transition: none;
+.ol-select-item[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ol-shortcut-popup {
+  width: 320px;
+  padding: 10px;
+}
+.ol-shortcut-popup .ol-shortcut-recording {
+  border: 0;
+  background: transparent;
+}
+.ol-select-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 1px 1px 4px;
+  padding: 0 9px;
+  min-height: 34px;
+  border: 0.5px solid var(--ol-line-strong);
+  border-radius: 7px;
+  background: var(--ol-select-trigger-bg);
+}
+.ol-select-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.ol-select-empty {
+  padding: 18px 10px;
+  color: var(--ol-ink-4);
+  text-align: center;
+}
+.ol-select-empty:empty {
+  display: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .ol-select-popup {

@@ -984,13 +984,13 @@ html[data-ol-conservative-layout='true'] .ol-conservative-scope .ol-select-lite-
   padding-top: 0;
 }
 .ol-omni-settings .ol-channel-form-row {
-  padding-top: 5px;
-  padding-bottom: 5px;
+  padding-top: 3px;
+  padding-bottom: 3px;
 }
 .ol-omni-tools {
   border-top: 1px solid var(--ol-line);
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: 6px;
+  padding-top: 6px;
 }
 .ol-omni-tools-actions {
   display: flex;

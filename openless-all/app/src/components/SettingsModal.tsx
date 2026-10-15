@@ -40,7 +40,7 @@ import {
   ExperimentalAsrGuidance,
 } from '../pages/settings/ExperimentalAsrSection';
 import { ProviderLeaveContext, useProviderForm } from '../pages/settings/ProviderForm';
-import { useContentMotion, useOverlayMotion } from '../lib/motion';
+import { usePageTransition, useOverlayMotion } from '../lib/motion';
 
 export type { SettingsSectionId } from '../pages/settings/navigation';
 
@@ -69,8 +69,10 @@ export function SettingsModal({
   const providerForm = useProviderForm();
   const mobile = useMobileLayout();
   const conservative = useConservativeLayout();
-  const [section, setSection] = useState<SettingsSectionId>(initialSettingsSection ?? 'general');
-  const [advancedPage, setAdvancedPage] = useState<AdvancedPageId | null>(null);
+  const [requestedSection, setSection] = useState<SettingsSectionId>(
+    initialSettingsSection ?? 'general',
+  );
+  const [requestedAdvancedPage, setAdvancedPage] = useState<AdvancedPageId | null>(null);
   const [query, setQuery] = useState('');
   const [platformCaps, setPlatformCaps] = useState(getCachedPlatformCapabilities);
   const experimentalAsr = useExperimentalAsr(platformCaps?.platform === 'desktop' && os === 'mac');
@@ -91,9 +93,18 @@ export function SettingsModal({
   const surfaceRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   // A settings destination, not a dialog floating inside another framed surface.
-  useOverlayMotion(overlayRef, closing, 'backdrop', false, 'settings');
-  useOverlayMotion(surfaceRef, closing, mobile ? 'sheet' : 'card', true, 'settings');
+  // Fade the entire workspace, including its opaque background. Fading only the
+  // child left a solid sheet that disappeared in a single frame on unmount.
+  useOverlayMotion(overlayRef, closing, 'backdrop', true, 'settings');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const destination = usePageTransition(
+    `${requestedSection}:${requestedAdvancedPage ?? ''}`,
+    scrollRef,
+    mobile,
+  );
+  const [sectionKey, advancedKey] = destination.split(':');
+  const section = sectionKey as SettingsSectionId;
+  const advancedPage = (advancedKey || null) as AdvancedPageId | null;
   const searchRef = useRef<HTMLInputElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -118,7 +129,6 @@ export function SettingsModal({
     }),
   );
   const searching = query.trim().length > 0;
-  useContentMotion(scrollRef, `${section}:${searching ? 'search' : (advancedPage ?? 'root')}`);
   const results = searchSettingsSections(sections, query);
   const testingFeaturesEnabled = prefs?.testingFeaturesEnabled === true;
   const advancedPages = visibleAdvancedPages(platformCaps?.platform, os, testingFeaturesEnabled);
@@ -203,7 +213,7 @@ export function SettingsModal({
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [section, searching, advancedPage]);
 
@@ -424,7 +434,12 @@ export function SettingsModal({
               }}
             >
               {!mobile && (
-                <button type="button" className="ol-settings-return" onClick={closeSettings}>
+                <button
+                  ref={closeRef}
+                  type="button"
+                  className="ol-settings-return"
+                  onClick={closeSettings}
+                >
                   <Icon name="chevLeft" size={16} />
                   {t('uiRefinement.back')}
                 </button>
@@ -461,7 +476,7 @@ export function SettingsModal({
                   />
                 )}
                 {sections.map((item) => {
-                  const active = !searching && section === item.id;
+                  const active = !searching && requestedSection === item.id;
                   return (
                     <button
                       key={item.id}
@@ -597,20 +612,9 @@ export function SettingsModal({
                         {contentTitle}
                       </h2>
                       {!mobile && (
-                        <>
-                          <span style={{ color: 'var(--ol-ink-3)', fontSize: 12, flexShrink: 0 }}>
-                            {t('modal.autoSaveHint')}
-                          </span>
-                          <button
-                            ref={closeRef}
-                            type="button"
-                            onClick={closeSettings}
-                            aria-label={t('common.close')}
-                            style={iconButtonStyle}
-                          >
-                            <Icon name="close" size={17} />
-                          </button>
-                        </>
+                        <span style={{ color: 'var(--ol-ink-3)', fontSize: 12, flexShrink: 0 }}>
+                          {t('modal.autoSaveHint')}
+                        </span>
                       )}
                     </div>
                   )}

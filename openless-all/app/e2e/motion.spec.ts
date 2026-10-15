@@ -40,7 +40,7 @@ test('settings entrance exposes its starting pose, interpolates and releases its
     // Capture creation, not a later DOM scan that may miss a short-lived effect.
     Element.prototype.animate = function (keyframes, options) {
       const animation = original.call(this, keyframes, options);
-      if (this instanceof HTMLElement && this.matches('.ol-settings-surface')) {
+      if (this instanceof HTMLElement && this.matches('.ol-settings-workspace')) {
         const style = getComputedStyle(this);
         const transform = new DOMMatrixReadOnly(style.transform);
         const entry = {
@@ -115,8 +115,9 @@ test('settings entrance exposes its starting pose, interpolates and releases its
     }
   });
   expect(initial.opacity).toBeLessThan(0.1);
-  expect(initial.y).toBeGreaterThan(16);
-  expect(initial.scale).toBeLessThan(0.97);
+  // A full-window settings destination fades; scaling its text caused raster flicker.
+  expect(initial.y).toBe(0);
+  expect(initial.scale).toBe(1);
   expect(frames.some((frame) => frame.opacity > 0.1 && frame.opacity < 0.9)).toBe(true);
   expect(new Set(frames.map((frame) => frame.opacity)).size).toBeGreaterThan(3);
   await expect(dialog).toHaveCSS('opacity', '1');
@@ -145,7 +146,7 @@ test('closing during entry preserves the painted opacity and releases the dialog
 }) => {
   await page.evaluate(() => {
     const observer = new MutationObserver(() => {
-      const panel = document.querySelector<HTMLElement>('.ol-settings-surface');
+      const panel = document.querySelector<HTMLElement>('.ol-settings-workspace');
       const animation = panel?.getAnimations().find((entry) => entry.id === 'ol-surface-enter');
       if (panel && animation && !panel.dataset.testEntryPending) {
         panel.dataset.testEntryPending = 'true';
@@ -175,11 +176,12 @@ test('closing during entry preserves the painted opacity and releases the dialog
   });
   await page.getByRole('button', { name: '设置', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '设置', exact: true });
-  await expect(dialog).toHaveAttribute('data-test-entry-opacity', /.+/);
-  const before = Number(await dialog.getAttribute('data-test-entry-opacity'));
+  const workspace = page.locator('.ol-settings-workspace');
+  await expect(workspace).toHaveAttribute('data-test-entry-opacity', /.+/);
+  const before = Number(await workspace.getAttribute('data-test-entry-opacity'));
   expect(before).toBeGreaterThan(0);
   expect(before).toBeLessThan(1);
-  await dialog.getByRole('button', { name: '关闭', exact: true }).click();
+  await dialog.getByRole('button', { name: '返回应用', exact: true }).click();
   await expect(page.locator('body')).toHaveAttribute('data-test-exit-opacity', /.+/);
   const from = Number(await page.locator('body').getAttribute('data-test-exit-opacity'));
   expect(Math.abs(from - before)).toBeLessThan(0.001);
@@ -210,7 +212,7 @@ test('reduced motion keeps model gates and removes the closing delay', async ({ 
           .filter((animation) => animation.id.startsWith('ol-surface')).length,
     ),
   ).toBe(0);
-  await dialog.getByRole('button', { name: '关闭', exact: true }).click();
+  await dialog.getByRole('button', { name: '返回应用', exact: true }).click();
   // React commits the effect-driven unmount asynchronously, even without an exit timer.
   await expect(dialog).toHaveCount(0, { timeout: 100 });
 });

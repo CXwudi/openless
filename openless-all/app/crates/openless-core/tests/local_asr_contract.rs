@@ -394,9 +394,15 @@ impl ModelRuntimeAdapter for RecordingLocalAsrRuntime {
 }
 
 #[derive(Default)]
+struct CredentialStatusPause {
+    resume: tokio::sync::Notify,
+}
+
+#[derive(Default)]
 struct FailingActiveCredentialStore {
     inner: InMemoryCredentialStore,
     fail_set: std::sync::atomic::AtomicBool,
+    pause_next_status: Mutex<Option<Arc<CredentialStatusPause>>>,
 }
 
 impl CredentialStore for FailingActiveCredentialStore {
@@ -404,7 +410,14 @@ impl CredentialStore for FailingActiveCredentialStore {
         &self,
         preferences: openless_core::UserPreferences,
     ) -> BoxFuture<'static, Result<CredentialsStatus, BackendError>> {
-        self.inner.status(preferences)
+        let pause = self.pause_next_status.lock().unwrap().take();
+        let status = self.inner.status(preferences);
+        Box::pin(async move {
+            if let Some(pause) = pause {
+                pause.resume.notified().await;
+            }
+            status.await
+        })
     }
 
     fn read(
@@ -1220,6 +1233,226 @@ async fn disabling_releases_but_keeps_files_and_stays_cold_after_restart() {
     assert!(fresh_runtime.operations.lock().unwrap().is_empty());
     assert!(!restarted.list_channels(ChannelKind::Asr).await.unwrap()[0].enabled);
     std::fs::remove_dir_all(data_dir).unwrap();
+}
+
+async fn loaded_local_channel(
+    credentials: Arc<dyn CredentialStore>,
+) -> (
+    PathBuf,
+    Arc<RecordingLocalAsrRuntime>,
+    OpenLessBackend,
+    String,
+) {
+    let (data_dir, runtime, backend) = local_asr_backend_with_credentials(credentials, None);
+    let target = LocalAsrTarget::parse(LocalAsrRuntime::Generic, "qwen3-asr-0.6b").unwrap();
+    install_fixture(&data_dir, &target);
+    let local = backend
+        .activate_local_asr(LocalAsrActivationRequest {
+            target,
+            provider_id: "local-qwen3-mlx".into(),
+        })
+        .await
+        .unwrap()
+        .provider_id;
+    backend
+        .services()
+        .local_asr
+        .preload(LocalAsrRuntime::Generic)
+        .await
+        .unwrap();
+    runtime.operations.lock().unwrap().clear();
+    (data_dir, runtime, backend, local)
+}
+
+async fn retire_channel(backend: &OpenLessBackend, id: String, action: &str) {
+    match action {
+        "disable" => backend
+            .set_channel_enabled(ChannelKind::Asr, id, false)
+            .await
+            .unwrap(),
+        "delete" => backend.delete_channel(ChannelKind::Asr, id).await.unwrap(),
+        "provider_type" => backend
+            .set_channel_provider_type(ChannelKind::Asr, id, "openai-compatible".into())
+            .await
+            .unwrap(),
+        "delete_blank" => assert!(backend
+            .delete_channel_if_blank(ChannelKind::Asr, id)
+            .await
+            .unwrap()),
+        _ => panic!("unknown channel retirement fixture"),
+    }
+}
+
+#[tokio::test]
+async fn non_active_same_provider_channel_edits_do_not_release_the_active_runtime() {
+    for action in ["disable", "delete", "provider_type", "delete_blank"] {
+        let (data_dir, runtime, backend, local) =
+            loaded_local_channel(Arc::new(InMemoryCredentialStore::default())).await;
+        let spare = backend
+            .create_channel(ChannelKind::Asr, "local-qwen3-mlx".into(), String::new())
+            .await
+            .unwrap();
+        retire_channel(&backend, spare, action).await;
+        assert_eq!(
+            backend.active_provider(ProviderSlot::Asr).await.unwrap(),
+            local
+        );
+        assert!(
+            runtime.operations.lock().unwrap().is_empty(),
+            "{action} retired another channel's runtime"
+        );
+        assert!(!runtime.loaded_models.lock().unwrap().is_empty());
+        std::fs::remove_dir_all(data_dir).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn active_local_channel_edits_release_its_runtime_when_no_local_owner_remains() {
+    for action in ["disable", "delete", "provider_type", "delete_blank"] {
+        let (data_dir, runtime, backend, local) =
+            loaded_local_channel(Arc::new(InMemoryCredentialStore::default())).await;
+        backend
+            .create_channel(ChannelKind::Asr, "volcengine".into(), "Cloud".into())
+            .await
+            .unwrap();
+        retire_channel(&backend, local, action).await;
+        assert_eq!(
+            *runtime.operations.lock().unwrap(),
+            ["release:Generic"],
+            "{action}"
+        );
+        assert!(runtime.loaded_models.lock().unwrap().is_empty());
+        std::fs::remove_dir_all(data_dir).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn committed_channel_changes_are_published_even_when_runtime_release_fails() {
+    let (data_dir, runtime, backend, local) =
+        loaded_local_channel(Arc::new(InMemoryCredentialStore::default())).await;
+    let cloud = backend
+        .create_channel(ChannelKind::Asr, "volcengine".into(), "Cloud".into())
+        .await
+        .unwrap();
+    let mut events = backend.subscribe();
+    runtime
+        .fail_release
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let error = backend
+        .set_channel_enabled(ChannelKind::Asr, local, false)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, BackendErrorCode::Platform);
+    assert_eq!(backend.active_provider(ProviderSlot::Asr).await.unwrap(), cloud);
+    assert!(matches!(
+        events.try_recv().unwrap().kind,
+        BackendEventKind::CredentialsChanged(_)
+    ));
+    std::fs::remove_dir_all(data_dir).unwrap();
+}
+
+#[tokio::test]
+async fn a_same_runtime_channel_takeover_preserves_the_shared_loaded_instance() {
+    let (data_dir, runtime, backend, local) =
+        loaded_local_channel(Arc::new(InMemoryCredentialStore::default())).await;
+    let replacement = backend
+        .create_channel(
+            ChannelKind::Asr,
+            "local-qwen3-mlx".into(),
+            "Replacement".into(),
+        )
+        .await
+        .unwrap();
+    backend
+        .set_channel_enabled(ChannelKind::Asr, local, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        backend.active_provider(ProviderSlot::Asr).await.unwrap(),
+        replacement
+    );
+    assert!(runtime.operations.lock().unwrap().is_empty());
+    assert!(!runtime.loaded_models.lock().unwrap().is_empty());
+    std::fs::remove_dir_all(data_dir).unwrap();
+}
+
+#[tokio::test]
+async fn late_credentials_refresh_never_releases_a_reselected_or_reloaded_local_owner() {
+    for action in ["disable", "delete", "provider_type", "select", "reorder"] {
+        let credentials = Arc::new(FailingActiveCredentialStore::default());
+        let (data_dir, runtime, backend, local) = loaded_local_channel(credentials.clone()).await;
+        let cloud = backend
+            .create_channel(ChannelKind::Asr, "volcengine".into(), "Cloud".into())
+            .await
+            .unwrap();
+        let pause = Arc::new(CredentialStatusPause::default());
+        *credentials.pause_next_status.lock().unwrap() = Some(pause.clone());
+        let retiring: BoxFuture<'_, ()> = match action {
+            "select" => Box::pin(async {
+                backend
+                    .set_active_provider(ProviderSlot::Asr, cloud.clone())
+                    .await
+                    .unwrap();
+            }),
+            "reorder" => Box::pin(async {
+                backend
+                    .reorder_channels(ChannelKind::Asr, vec![cloud.clone(), local.clone()])
+                    .await
+                    .unwrap();
+            }),
+            _ => Box::pin(retire_channel(&backend, local.clone(), action)),
+        };
+        tokio::pin!(retiring);
+        assert!(futures_util::poll!(retiring.as_mut()).is_pending());
+        assert_eq!(
+            *runtime.operations.lock().unwrap(),
+            ["release:Generic"],
+            "{action}: release must precede refresh"
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            if action == "provider_type" {
+                backend
+                    .set_channel_provider_type(
+                        ChannelKind::Asr,
+                        local.clone(),
+                        "local-qwen3-mlx".into(),
+                    )
+                    .await
+                    .unwrap();
+            }
+            backend
+                .activate_local_asr(LocalAsrActivationRequest {
+                    target: LocalAsrTarget::parse(LocalAsrRuntime::Generic, "qwen3-asr-0.6b")
+                        .unwrap(),
+                    provider_id: "local-qwen3-mlx".into(),
+                })
+                .await
+                .unwrap();
+            backend
+                .services()
+                .local_asr
+                .preload(LocalAsrRuntime::Generic)
+                .await
+                .unwrap();
+        })
+        .await
+        .expect("a delayed status read must not lock out a replacement owner");
+        let reloaded = runtime.loaded_models.lock().unwrap().clone();
+        assert!(!reloaded.is_empty());
+        pause.resume.notify_one();
+        retiring.await;
+        assert_eq!(
+            *runtime.loaded_models.lock().unwrap(),
+            reloaded,
+            "{action}: stale cleanup unloaded the new instance"
+        );
+        assert_eq!(
+            *runtime.operations.lock().unwrap(),
+            ["release:Generic", "preload:qwen3-asr-0.6b"],
+            "{action}"
+        );
+        std::fs::remove_dir_all(data_dir).unwrap();
+    }
 }
 
 #[tokio::test]

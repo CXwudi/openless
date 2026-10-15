@@ -32,14 +32,14 @@ import { BetaChannelSection } from './BetaChannelSection';
 import { AutoUpdateSection } from './AutoUpdateSection';
 import { StartupDiagnostics } from './StartupDiagnostics';
 import { AboutSection } from './AboutSection';
-import { getPlatformCapabilities } from '../../lib/platform';
+import { getPlatformCapabilities, getCachedPlatformCapabilities } from '../../lib/platform';
 import { listChannels } from '../../lib/ipc';
 import type { PlatformCapabilities } from '../../lib/types';
 import { useHotkeySettings } from '../../state/HotkeySettingsContext';
 import { emitSaved } from '../../lib/savedEvent';
 import { SettingRow, Toggle, ExperimentalSectionTitle, segmentedTrackStyle } from './shared';
 import { Card } from '../_atoms';
-import { useContentMotion, useSelectionMotion } from '../../lib/motion';
+import { usePageTransition, useSelectionMotion } from '../../lib/motion';
 import {
   availableServiceViews,
   isTestingFeaturePage,
@@ -52,7 +52,7 @@ import {
 
 // Platform capability query shared by all tabs (drives desktop/mobile and hotkey / auto-update gating).
 function usePlatformCaps(): PlatformCapabilities | null {
-  const [platformCaps, setPlatformCaps] = useState<PlatformCapabilities | null>(null);
+  const [platformCaps, setPlatformCaps] = useState(getCachedPlatformCapabilities);
 
   useEffect(() => {
     void getPlatformCapabilities().then(setPlatformCaps);
@@ -128,9 +128,9 @@ export function ServicesTab({ asrNavigation = 0 }: { asrNavigation?: number } = 
     if (asrNavigation) setView('asr');
   }, [asrNavigation]);
   const views = availableServiceViews(showLocalModel, detectOS());
-  const selectedView = resolveServiceView(view, views, multimodal, detectOS());
+  const requestedView = resolveServiceView(view, views, multimodal, detectOS());
   const contentRef = useRef<HTMLDivElement>(null);
-  useContentMotion(contentRef, selectedView);
+  const selectedView = usePageTransition(requestedView, contentRef, false);
   const pipelineRef = useRef<HTMLDivElement>(null);
   const pipelineIndicatorRef = useRef<HTMLSpanElement>(null);
   const navigationRef = useRef<HTMLDivElement>(null);
@@ -139,7 +139,7 @@ export function ServicesTab({ asrNavigation = 0 }: { asrNavigation?: number } = 
   useSelectionMotion(
     navigationRef,
     navigationIndicatorRef,
-    `${selectedView}:${views.length}`,
+    `${requestedView}:${views.length}`,
     true,
   );
   const setPipelineMode = (mode: 'traditional' | 'multimodal') => {
@@ -270,7 +270,7 @@ export function ServicesTab({ asrNavigation = 0 }: { asrNavigation?: number } = 
                 key={id}
                 type="button"
                 disabled={inactive}
-                aria-pressed={selectedView === id}
+                aria-pressed={requestedView === id}
                 onClick={() => setView(id)}
                 aria-label={
                   inactive

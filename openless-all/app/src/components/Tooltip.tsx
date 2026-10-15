@@ -117,7 +117,7 @@ export function Hint({
   id?: string;
 }) {
   return (
-    <Tooltip id={id} content={content} placement="top" wrap focusable className="ol-hint-trigger">
+    <Tooltip id={id} content={content} placement="right" wrap focusable className="ol-hint-trigger">
       {children}
     </Tooltip>
   );

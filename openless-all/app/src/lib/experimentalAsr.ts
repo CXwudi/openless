@@ -17,8 +17,23 @@ export interface ExperimentalAsrStatus {
   error: string | null;
 }
 export const EXPERIMENTAL_ASR_MODELS = ['text-stream', 'sense-voice', 'embedding-gemma'] as const;
+export function experimentalAsrModelFromDownloadId(id: string): ExperimentalAsrModel | null {
+  return (
+    (
+      {
+        'experimental-textstream-qwen3': 'text-stream',
+        'experimental-sensevoice-small': 'sense-voice',
+        'experimental-embedding-gemma-en': 'embedding-gemma',
+      } as Record<string, ExperimentalAsrModel>
+    )[id] ?? null
+  );
+}
 export function experimentalAsrProvider(model: ExperimentalAsrModel): string {
-  return { 'text-stream': 'experimental-textstream', 'sense-voice': 'experimental-sensevoice', 'embedding-gemma': 'experimental-embedding-gemma' }[model];
+  return {
+    'text-stream': 'experimental-textstream',
+    'sense-voice': 'experimental-sensevoice',
+    'embedding-gemma': 'experimental-embedding-gemma',
+  }[model];
 }
 export function isRetiredMacAsrProvider(provider: string): boolean {
   return [
@@ -34,7 +49,11 @@ export function isExperimentalAsrProvider(provider: string): boolean {
   return EXPERIMENTAL_ASR_MODELS.some((model) => experimentalAsrProvider(model) === provider);
 }
 export function experimentalAsrName(model: ExperimentalAsrModel): string {
-  return { 'text-stream': 'TextStream', 'sense-voice': 'SenseVoice Small', 'embedding-gemma': 'Embedding Gemma' }[model];
+  return {
+    'text-stream': 'TextStream',
+    'sense-voice': 'SenseVoice Small',
+    'embedding-gemma': 'Embedding Gemma',
+  }[model];
 }
 export function downloadPercent(status: ExperimentalAsrStatus): number {
   return Math.min(
@@ -54,7 +73,8 @@ const mock = EXPERIMENTAL_ASR_MODELS.map((model): ExperimentalAsrStatus => ({
   unavailableReason: null,
   phase: 'disabled',
   downloadedBytes: 0,
-  totalBytes: model === 'text-stream' ? 1880560703 : model === 'sense-voice' ? 239549735 : 714975724,
+  totalBytes:
+    model === 'text-stream' ? 1880560703 : model === 'sense-voice' ? 239549735 : 714975724,
   channelId: null,
   needsGuidance: false,
   error: null,
@@ -69,7 +89,11 @@ export async function getExperimentalAsrStatus(): Promise<ExperimentalAsrStatus[
       if (elapsed >= 1800) {
         if (!status.channelId) {
           const hasSelection = (await listChannels('asr')).some((channel) => channel.enabled);
-          status.channelId = await createChannel('asr', experimentalAsrProvider(status.model), experimentalAsrName(status.model));
+          status.channelId = await createChannel(
+            'asr',
+            experimentalAsrProvider(status.model),
+            experimentalAsrName(status.model),
+          );
           if (!hasSelection) await setChannelEnabled('asr', status.channelId, false);
         }
         status.phase = 'ready';
@@ -78,7 +102,9 @@ export async function getExperimentalAsrStatus(): Promise<ExperimentalAsrStatus[
     }
     return mock.map((status) => ({ ...status }));
   });
-  return [...result].sort((a, b) => EXPERIMENTAL_ASR_MODELS.indexOf(a.model) - EXPERIMENTAL_ASR_MODELS.indexOf(b.model));
+  return [...result].sort(
+    (a, b) => EXPERIMENTAL_ASR_MODELS.indexOf(a.model) - EXPERIMENTAL_ASR_MODELS.indexOf(b.model),
+  );
 }
 export async function setExperimentalAsrEnabled(
   model: ExperimentalAsrModel,

@@ -1,5 +1,6 @@
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Collapsible } from '@base-ui/react/collapsible';
 import { Icon } from '../Icon';
 
 export function Collapse({
@@ -11,18 +12,25 @@ export function Collapse({
   children: ReactNode;
   id?: string;
 }) {
+  // Preserve the outgoing content until its height/opacity transition finishes;
+  // callers can clear the associated notice or operation state immediately.
+  const retained = useRef(children);
+  if (open) retained.current = children;
   return (
-    <div
-      className="ol-collapse"
-      data-open={open}
-      id={id}
-      aria-hidden={!open}
-      ref={(element) => {
-        if (element) element.inert = !open;
-      }}
-    >
-      <div>{children}</div>
-    </div>
+    <Collapsible.Root open={open} render={<div style={{ display: 'contents' }} />}>
+      <Collapsible.Panel
+        keepMounted
+        className="ol-collapse"
+        data-open={open}
+        id={id}
+        aria-hidden={!open}
+        ref={(element) => {
+          if (element) element.inert = !open;
+        }}
+      >
+        <div>{open ? children : retained.current}</div>
+      </Collapsible.Panel>
+    </Collapsible.Root>
   );
 }
 

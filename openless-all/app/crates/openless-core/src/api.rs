@@ -2328,6 +2328,8 @@ pub struct OpenLessBackend {
     preferences: Arc<PreferencesStore>,
     preferences_revision: Arc<AtomicU64>,
     settings_write_gate: Arc<Mutex<()>>,
+    // Serialize channel ownership changes through runtime cleanup, not status reads.
+    local_asr_channel_gate: tokio::sync::Mutex<()>,
     cloud_sync: Option<crate::cloud_sync::CloudSyncService>,
     encrypted_sync: Option<crate::cloud_sync_e2ee::EncryptedSyncService>,
     encrypted_sync_store: Option<Arc<crate::cloud_sync_e2ee_store::CoreSyncStore>>,
@@ -2933,6 +2935,7 @@ impl OpenLessBackend {
             preferences: repositories.preferences,
             preferences_revision,
             settings_write_gate,
+            local_asr_channel_gate: tokio::sync::Mutex::new(()),
             cloud_sync,
             encrypted_sync,
             encrypted_sync_store,
@@ -4643,6 +4646,16 @@ impl OpenLessBackend {
                 "provider type must not be blank",
             ));
         }
+        if kind == ChannelKind::Asr {
+            return self
+                .apply_channel_mutation(ChannelMutation::SetProviderType {
+                    kind,
+                    id,
+                    provider_type,
+                })
+                .await
+                .map(|_| ());
+        }
         let previous = self
             .list_channels(kind)
             .await?
@@ -4661,7 +4674,6 @@ impl OpenLessBackend {
             Some(id.clone()),
             crate::llm_protocol::SERVICE_TIER_ACCOUNT,
         )?;
-        let retire_asr = kind == ChannelKind::Asr && previous.provider_type != provider_type;
         let reset = kind == ChannelKind::Llm && previous.provider_type != provider_type;
         let (old_format, old_service_tier) = if reset {
             let old_format = self.deps.credential_store.read(key.clone()).await?;
@@ -4708,11 +4720,7 @@ impl OpenLessBackend {
             }
         }
         result?;
-        self.refresh_and_publish_credentials().await?;
-        if retire_asr {
-            self.release_local_asr_provider(&previous.provider_type).await?;
-        }
-        Ok(())
+        self.refresh_and_publish_credentials().await.map(|_| ())
     }
 
     pub async fn delete_channel_if_blank(
@@ -4765,26 +4773,9 @@ impl OpenLessBackend {
         kind: ChannelKind,
         ids: Vec<String>,
     ) -> Result<(), BackendError> {
-        // The settings UI selects ASR by channel order, not only through the
-        // legacy set_active_provider command. Retire the old runtime here too.
-        let previous = if kind == ChannelKind::Asr {
-            let id = self.active_provider(ProviderSlot::Asr).await?;
-            self.list_channels(kind)
-                .await?
-                .into_iter()
-                .find(|channel| channel.id == id)
-        } else {
-            None
-        };
         self.apply_channel_mutation(ChannelMutation::Reorder { kind, ids })
-            .await?;
-        if let Some(previous) = previous {
-            if self.active_provider(ProviderSlot::Asr).await? != previous.id {
-                self.release_local_asr_provider(&previous.provider_type)
-                    .await?;
-            }
-        }
-        Ok(())
+            .await
+            .map(|_| ())
     }
 
     pub async fn record_channel_test(
@@ -4832,37 +4823,26 @@ impl OpenLessBackend {
                 "provider id must not be blank",
             ));
         }
+        let owner_guard = if slot == ProviderSlot::Asr {
+            Some(self.local_asr_channel_gate.lock().await)
+        } else {
+            None
+        };
         let previous = if slot == ProviderSlot::Asr {
-            let id = self.deps.credential_store.active_provider(slot).await?;
-            let channels = match self
-                .deps
-                .credential_store
-                .list_channels(ChannelKind::Asr)
-                .await
-            {
-                Ok(channels) => channels,
-                Err(error) if error.code == BackendErrorCode::Unsupported => Vec::new(),
-                Err(error) => return Err(error),
-            };
-            let provider_type = channels
-                .into_iter()
-                .find(|channel| channel.id == id)
-                .map(|channel| channel.provider_type)
-                .unwrap_or_else(|| id.clone());
-            Some((id, provider_type))
+            self.asr_channel_owner().await?
         } else {
             None
         };
         self.deps
             .credential_store
-            .set_active_provider(slot, provider_id.clone())
+            .set_active_provider(slot, provider_id)
             .await?;
+        let retirement = self.release_previous_asr_owner(previous).await;
+        // No runtime cleanup may trail an asynchronous credentials refresh: a
+        // replacement channel/recording can already own the same runtime then.
+        drop(owner_guard);
         let status = self.refresh_and_publish_credentials().await?;
-        if let Some((previous_id, previous_type)) = previous {
-            if previous_id != provider_id {
-                self.release_local_asr_provider(&previous_type).await?;
-            }
-        }
+        retirement?;
         Ok(status)
     }
 
@@ -4870,7 +4850,9 @@ impl OpenLessBackend {
         &self,
         request: crate::domains::LocalAsrActivationRequest,
     ) -> Result<crate::domains::LocalAsrActivationResult, BackendError> {
+        let owner_guard = self.local_asr_channel_gate.lock().await;
         let result = self.deps.services.local_asr.activate(request).await?;
+        drop(owner_guard);
         self.refresh_and_publish_credentials().await?;
         Ok(result)
     }
@@ -4879,59 +4861,116 @@ impl OpenLessBackend {
         &self,
         mutation: ChannelMutation,
     ) -> Result<ChannelMutationResult, BackendError> {
-        // Disable/delete must release native state too, not just hide a channel
-        // in the UI. Downloaded files remain untouched.
-        let retiring_id = match &mutation {
-            ChannelMutation::SetEnabled {
-                kind: ChannelKind::Asr,
-                id,
-                enabled: false,
-            }
-            | ChannelMutation::Delete {
-                kind: ChannelKind::Asr,
-                id,
-            }
-            | ChannelMutation::SetProviderType {
-                kind: ChannelKind::Asr,
-                id,
-                ..
-            } => Some(id),
-            _ => None,
+        let kind = match &mutation {
+            ChannelMutation::ActivateLocalAsr { .. }
+            | ChannelMutation::RegisterExperimentalAsr { .. } => ChannelKind::Asr,
+            ChannelMutation::Create { kind, .. }
+            | ChannelMutation::SetProviderType { kind, .. }
+            | ChannelMutation::InvalidateTest { kind, .. }
+            | ChannelMutation::InvalidateTests { kind }
+            | ChannelMutation::DeleteIfBlank { kind, .. }
+            | ChannelMutation::Rename { kind, .. }
+            | ChannelMutation::Delete { kind, .. }
+            | ChannelMutation::SetEnabled { kind, .. }
+            | ChannelMutation::Reorder { kind, .. }
+            | ChannelMutation::RecordTest { kind, .. } => *kind,
         };
-        let retiring_provider = if let Some(id) = retiring_id {
-            self.deps
-                .credential_store
-                .list_channels(ChannelKind::Asr)
-                .await?
-                .into_iter()
-                .find(|channel| &channel.id == id)
-                .map(|channel| channel.provider_type)
+        let owner_guard = if kind == ChannelKind::Asr {
+            Some(self.local_asr_channel_gate.lock().await)
+        } else {
+            None
+        };
+        let previous = if kind == ChannelKind::Asr {
+            self.asr_channel_owner().await?
         } else {
             None
         };
         let result = self.deps.credential_store.mutate_channel(mutation).await?;
+        let retirement = self.release_previous_asr_owner(previous).await;
+        drop(owner_guard);
+        // The metadata commit still needs publishing when native cleanup fails.
         self.refresh_and_publish_credentials().await?;
-        if let Some(provider) = retiring_provider {
-            self.release_local_asr_provider(&provider).await?;
-        }
+        retirement?;
         Ok(result)
     }
 
+    async fn asr_channel_owner(&self) -> Result<Option<(String, String)>, BackendError> {
+        let id = match self
+            .deps
+            .credential_store
+            .active_provider(ProviderSlot::Asr)
+            .await
+        {
+            Ok(id) => id,
+            Err(error) if error.code == BackendErrorCode::Unsupported => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        if id.is_empty() {
+            return Ok(None);
+        }
+        let channels = match self
+            .deps
+            .credential_store
+            .list_channels(ChannelKind::Asr)
+            .await
+        {
+            Ok(channels) => channels,
+            Err(error) if error.code == BackendErrorCode::Unsupported => Vec::new(),
+            Err(error) => return Err(error),
+        };
+        Ok(
+            match channels.into_iter().find(|channel| channel.id == id) {
+                Some(channel) if channel.enabled => Some((id, channel.provider_type)),
+                Some(_) => None,
+                None => Some((id.clone(), id)), // Legacy provider-only selection.
+            },
+        )
+    }
+
+    async fn release_previous_asr_owner(
+        &self,
+        previous: Option<(String, String)>,
+    ) -> Result<(), BackendError> {
+        let Some(previous) = previous else {
+            return Ok(());
+        };
+        if let Some(current) = self.asr_channel_owner().await? {
+            // Editing an unrelated channel is not runtime retirement. A new
+            // channel using the same shared runtime also keeps ownership; its
+            // model can be replaced by the next explicit use, not a stale unload.
+            if current == previous
+                || current.1 == previous.1
+                || Self::local_asr_runtime(&previous.1)
+                    .is_some_and(|runtime| Self::local_asr_runtime(&current.1) == Some(runtime))
+            {
+                return Ok(());
+            }
+        }
+        self.release_local_asr_provider(&previous.1).await
+    }
+
+    fn local_asr_runtime(provider: &str) -> Option<crate::LocalAsrRuntime> {
+        match provider {
+            "local-qwen3" | "local-qwen3-mlx" | "local-qwen3-c" | "local-whisper"
+            | "apple-whisper" => Some(crate::LocalAsrRuntime::Generic),
+            "foundry-local" | "foundry-whisper" | "foundry-local-whisper" => {
+                Some(crate::LocalAsrRuntime::Foundry)
+            }
+            "sherpa-onnx" | "sherpa-onnx-local" => Some(crate::LocalAsrRuntime::SherpaOnnx),
+            _ => None,
+        }
+    }
+
     async fn release_local_asr_provider(&self, provider: &str) -> Result<(), BackendError> {
-        if let Some(model) = crate::experimental_asr::ExperimentalAsrModel::from_provider(provider) {
+        if let Some(model) = crate::experimental_asr::ExperimentalAsrModel::from_provider(provider)
+        {
             if let Some(service) = &self.deps.services.experimental_asr {
                 service.release_runtime(model).await?;
             }
             return Ok(());
         }
-        let runtime = match provider {
-            "local-qwen3" | "local-qwen3-mlx" | "local-qwen3-c" | "local-whisper"
-            | "apple-whisper" => crate::LocalAsrRuntime::Generic,
-            "foundry-local" | "foundry-whisper" | "foundry-local-whisper" => {
-                crate::LocalAsrRuntime::Foundry
-            }
-            "sherpa-onnx" | "sherpa-onnx-local" => crate::LocalAsrRuntime::SherpaOnnx,
-            _ => return Ok(()),
+        let Some(runtime) = Self::local_asr_runtime(provider) else {
+            return Ok(());
         };
         match self.deps.services.local_asr.release(runtime).await {
             Err(error) if error.code == BackendErrorCode::Unsupported => Ok(()),

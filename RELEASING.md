@@ -86,10 +86,18 @@ The script takes a plain `X.Y.Z`; for a prerelease version such as
 3. CI is green on the commit being tagged.
 4. The applicable [desktop feature and device acceptance](docs/2.0-desktop-acceptance.md), signing, and distribution requirements are met; green builds alone do not establish product readiness. Linux acceptance below is required before including Linux assets.
 5. Then, and only then, push the release tag.
-6. Beta tag workflows upload Tauri and Android assets to a shared draft.
-   Wait for **both** workflows to succeed, verify the packages and Beta updater
-   manifests, then publish that draft as a prerelease.
+6. Both Beta and Stable tag workflows upload Tauri and Android assets to a shared
+   draft. Wait for **both** workflows to succeed, verify the packages and channel
+   updater manifests, then publish that draft (Beta as a prerelease; Stable as latest).
    Do not rerun an asset workflow after publication without first returning the release to draft.
+7. Publishing Stable with the administrator's CLI/UI credential automatically
+   triggers `sync-homebrew-cask.yml`. It accepts only the published latest Stable
+   tag, preserves application build metadata in DMG filenames, verifies matching
+   ARM/Intel versions, computes their checksums and commits the cask update.
+   Drafts, Beta and older releases never update Homebrew. If repair is needed, run
+   `gh workflow run sync-homebrew-cask.yml -f tag=v<version>-tauri`; no asset rebuild
+   or manual cask edit is needed. Do not publish via an asset workflow's
+   `GITHUB_TOKEN`, which does not emit the downstream release event.
 
 Before independently attaching Linux assets, additionally require all of the following:
 

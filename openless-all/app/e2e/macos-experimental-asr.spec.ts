@@ -96,7 +96,7 @@ test('closing settings does not auto-enable a channel or lose completion guidanc
   await page.getByRole('switch', { name: 'SenseVoice Small', exact: true }).click();
   await page
     .getByRole('dialog', { name: '设置', exact: true })
-    .getByRole('button', { name: '关闭', exact: true })
+    .getByRole('button', { name: '返回应用', exact: true })
     .click();
   await page.waitForTimeout(2100);
   await page.getByRole('button', { name: '设置', exact: true }).click();

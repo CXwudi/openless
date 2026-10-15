@@ -526,9 +526,9 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: 'OpenLess ${{ github.ref_name }}'
-          # Keep Beta assets private until all platforms have built and the
-          # administrator has verified the downloadable packages.
-          draft: ${{ env.OPENLESS_RELEASE_CHANNEL == 'beta' }}
+          # Both channels stay draft until all desktop/Android assets are verified.
+          # The administrator explicitly publishes the shared release afterwards.
+          draft: true
           # Beta releases must be marked prerelease=true: GitHub UI collapses them and regular
           # users do not see them; only latest-*-beta.json is uploaded, so stable users'
           # endpoint (latest-*.json) is never overwritten and beta never leaks into stable.
@@ -550,100 +550,3 @@ jobs:
             openless-all/app/src-tauri/target/release/bundle/msi/*.msi
             openless-all/app/src-tauri/target/release/bundle/msi/*.msi.sig
             openless-all/app/src-tauri/target/release/bundle/latest-*.json
-
-  # ── After a stable release, update the Homebrew cask automatically ──
-  # Why in this pipeline instead of a separate `release: published` workflow: a Release created
-  # by softprops with the default GITHUB_TOKEN does not trigger other workflows on the `release`
-  # event (GitHub's anti-recursion rule), so a standalone update-cask workflow would never fire
-  # automatically. Chaining it with needs: build in the same pipeline is the only way to update
-  # the cask on every stable release.
-  #
-  # Stable only: v*-tauri and not -beta-tauri. Beta does not touch Homebrew, avoiding pushing a
-  # prerelease to `brew install --cask openless` users. The cask lives on the default branch
-  # (beta); commits go back to that branch.
-  update-homebrew-cask:
-    name: Update Homebrew cask (stable only)
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
-    if: >-
-      startsWith(github.ref, 'refs/tags/v')
-      && endsWith(github.ref, '-tauri')
-      && !endsWith(github.ref, '-beta-tauri')
-      && !contains(github.ref_name, '-Beta.')
-    steps:
-      - name: Checkout default branch (cask 住在这里)
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Resolve version + DMG sha256 from the release
-        id: meta
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          version="${TAG#v}"
-          version="${version%-tauri}"
-
-          # Download the DMGs directly and compute sha256 ourselves; do not depend on the
-          # timing/availability of GitHub's asset digest fields.
-          mkdir -p "$RUNNER_TEMP/dmg"
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --dir "$RUNNER_TEMP/dmg" \
-            --pattern '*aarch64.dmg' --pattern '*_x64.dmg'
-
-          arm_sha="$(sha256sum "$RUNNER_TEMP"/dmg/*aarch64.dmg | cut -d' ' -f1)"
-          intel_sha="$(sha256sum "$RUNNER_TEMP"/dmg/*_x64.dmg | cut -d' ' -f1)"
-
-          {
-            echo "version=$version"
-            echo "arm_sha=$arm_sha"
-            echo "intel_sha=$intel_sha"
-          } >> "$GITHUB_OUTPUT"
-          echo "cask → version=$version arm=$arm_sha intel=$intel_sha"
-
-      - name: Update Casks/openless.rb
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
-          ARM_SHA: ${{ steps.meta.outputs.arm_sha }}
-          INTEL_SHA: ${{ steps.meta.outputs.intel_sha }}
-        run: |
-          set -euo pipefail
-          cask="Casks/openless.rb"
-          # Warning: line 2 of the cask, `arch arm: "aarch64", intel: "x64"`, also contains
-          # `intel: "..."`. A bare `s/intel: "..."/` would rewrite the arch instruction with a
-          # hash too -> brew installs 404 for Intel users. So the intel sed anchors the sha256
-          # line with `^[[:space:]]*intel:`, while the arm sed naturally matches only the sha256
-          # line via the `sha256 arm:   ` prefix. Capture group \1 preserves the original indent.
-          sed -i "s/version \"[^\"]*\"/version \"$VERSION\"/" "$cask"
-          sed -i "s/sha256 arm:   \"[^\"]*\"/sha256 arm:   \"$ARM_SHA\"/" "$cask"
-          sed -i "s/^\([[:space:]]*\)intel: \"[^\"]*\"/\1intel: \"$INTEL_SHA\"/" "$cask"
-          # Guard: the arch instruction must remain untouched and both new sha256 values must
-          # actually be written, otherwise fail the job.
-          grep -q 'arch arm: "aarch64", intel: "x64"' "$cask" \
-            || { echo "::error::arch 指令被 sed 误伤"; exit 1; }
-          grep -q "\"$ARM_SHA\"" "$cask" && grep -q "\"$INTEL_SHA\"" "$cask" \
-            || { echo "::error::sha256 未正确写入 cask"; exit 1; }
-          echo "----- updated $cask -----"
-          cat "$cask"
-
-      - name: Commit & push cask bump
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Casks/openless.rb
-          if git diff --cached --quiet; then
-            echo "cask 已是 $VERSION，无需提交"
-            exit 0
-          fi
-          # [skip ci]: cask text changes do not need another cross-platform ci.yml run.
-          git commit -m "[cask] openless $VERSION (auto from release) [skip ci]"
-          git push

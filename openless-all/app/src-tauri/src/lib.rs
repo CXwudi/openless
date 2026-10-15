@@ -979,6 +979,20 @@ fn run_desktop() {
                         hide_main_window(app);
                     }
                 }
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                if label == "less-computer" {
+                    if let tauri::WindowEvent::CloseRequested { ref api, .. } = event {
+                        // Native traffic lights own the macOS window. Preserve
+                        // the existing animated dismiss and capture cleanup.
+                        api.prevent_close();
+                        let coordinator = Arc::clone(app.state::<Arc<coordinator::Coordinator>>().inner());
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(error) = coordinator.dismiss_less_computer().await {
+                                log::warn!("[less-computer] native close cleanup failed: {error}");
+                            }
+                        });
+                    }
+                }
             }
             RunEvent::Exit => {
                 TRAY_MICROPHONE_WATCHER_STOPPING.store(true, Ordering::Relaxed);
@@ -2892,7 +2906,10 @@ fn ensure_less_computer_window<R: tauri::Runtime>(
     )
     .title("OpenLess Less Computer")
     .inner_size(LESS_COMPUTER_WINDOW_WIDTH, LESS_COMPUTER_WINDOW_HEIGHT)
-    .decorations(false)
+    .decorations(true)
+    .title_bar_style(tauri::TitleBarStyle::Overlay)
+    .hidden_title(true)
+    .traffic_light_position(tauri::LogicalPosition::new(16.0, 18.0))
     .transparent(true)
     .shadow(true)
     .always_on_top(true)

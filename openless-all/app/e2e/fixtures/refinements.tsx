@@ -1,11 +1,13 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AnimatePresence } from 'framer-motion';
 import { i18nReady } from '../../src/i18n';
 import { useSpringReorder } from '../../src/lib/useSpringReorder';
 import { initInteractionMode } from '../../src/lib/interactionMode';
 import { Toggle } from '../../src/pages/settings/shared';
-import { ExpandableText } from '../../src/components/ui/Disclosure';
+import { Collapse, ExpandableText } from '../../src/components/ui/Disclosure';
+import { SelectLite } from '../../src/components/ui/SelectLite';
+import { PresenceModal } from '../../src/components/ui/Modal';
 import { ChoiceChips } from '../../src/components/ui/ChoiceChips';
 import { DismissibleCard } from '../../src/components/ui/DismissibleCard';
 import { cardDeparture } from '../../src/lib/cardDeparture';
@@ -116,7 +118,70 @@ function Fixture() {
         </>
       </AnimatePresence>
       {deleted && <button onClick={() => setDeleted(false)}>Undo</button>}
+      <LiveSelectFixture />
+      <NoticeFixture />
+      <ModalFixture />
     </main>
+  );
+}
+function LiveSelectFixture() {
+  const [pulse, setPulse] = useState(0);
+  const [value, setValue] = useState('item-0');
+  const [searched, setSearched] = useState('item-0');
+  useEffect(() => {
+    const timer = window.setInterval(() => setPulse((current) => current + 1), 120);
+    return () => window.clearInterval(timer);
+  }, []);
+  const options = Array.from({ length: 60 }, (_, index) => ({
+    value: `item-${index}`,
+    label: `Option ${index}`,
+    trailing: <span>{pulse}</span>,
+  }));
+  return (
+    <section style={{ display: 'flex', gap: 20, padding: '24px 0' }}>
+      <SelectLite ariaLabel="Long menu" value={value} onChange={setValue} options={options} />
+      <SelectLite
+        ariaLabel="Searchable menu"
+        value={searched}
+        onChange={setSearched}
+        options={options}
+        searchable
+        searchPlaceholder="Search options"
+      />
+    </section>
+  );
+}
+function NoticeFixture() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section style={{ width: 400 }}>
+      <button onClick={() => setOpen((value) => !value)}>Toggle notice</button>
+      <Collapse open={open}>
+        <div data-testid="notice" style={{ height: 100, padding: 16 }}>
+          Working status
+        </div>
+      </Collapse>
+      <p data-testid="following">Following content</p>
+    </section>
+  );
+}
+function ModalFixture() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button onClick={() => setOpen(true)}>Open modal fixture</button>
+      <PresenceModal
+        open={open}
+        labelledBy="fixture-modal-title"
+        onClose={() => setOpen(false)}
+        render={() => (
+          <>
+            <h2 id="fixture-modal-title">Modal fixture</h2>
+            <button onClick={() => setOpen(false)}>Close modal fixture</button>
+          </>
+        )}
+      />
+    </>
   );
 }
 initInteractionMode();

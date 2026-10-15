@@ -2,7 +2,8 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../../components/Icon';
 import { GithubLoginModal } from '../../components/GithubLoginModal';
-import { Modal } from '../../components/ui/Modal';
+import { ExitPresence, Modal } from '../../components/ui/Modal';
+import { Collapse } from '../../components/ui/Disclosure';
 import { Btn, Card } from '../_atoms';
 import { Toggle } from './shared';
 import { useHotkeySettings } from '../../state/HotkeySettingsContext';
@@ -812,19 +813,21 @@ export function CloudSyncSection() {
             </button>
           </div>
         )}
-        {working && (
+        <Collapse open={working}>
           <div className="ol-cloud-sync-actions">
             <span role="status">{t('cloudSyncE2ee.working')}</span>
             {taskControls}
           </div>
-        )}
-        {notice && !notice.error ? <p role="status">{t(`cloudSyncE2ee.${notice.key}`)}</p> : null}
-        {visibleError && (
+        </Collapse>
+        <Collapse open={!!notice && !notice.error}>
+          <p role="status">{notice ? t(`cloudSyncE2ee.${notice.key}`) : ''}</p>
+        </Collapse>
+        <Collapse open={!!visibleError}>
           <div className="ol-cloud-sync-status-line">
             <p role="alert" className="ol-cloud-sync-error">
               {t(`cloudSyncE2ee.errors.${visibleError}`)}
             </p>
-            {REFRESH_ERRORS.has(visibleError) && (
+            {REFRESH_ERRORS.has(visibleError ?? '') && (
               <Btn
                 size="sm"
                 variant="blue"
@@ -850,7 +853,7 @@ export function CloudSyncSection() {
                 </Btn>
               )}
           </div>
-        )}
+        </Collapse>
         {status?.lastError?.retryAfterSeconds != null &&
           Number.isSafeInteger(status.lastError.retryAfterSeconds) &&
           status.lastError.retryAfterSeconds > 0 &&
@@ -859,114 +862,126 @@ export function CloudSyncSection() {
           )}
         <p className="ol-cloud-sync-scope">{t('cloudSyncE2ee.passwordWarning')}</p>
       </section>
-      {showLogin && (
-        <GithubLoginModal
-          onClose={() => setShowLogin(false)}
-          onSuccess={(login) => {
-            setShowLogin(false);
-            void updatePrefs((value) => ({ ...value, marketplaceDevLogin: login }))
-              .then(() => loadRef.current())
-              .catch(showError);
-          }}
-        />
-      )}
-      {dialog && (
-        <SyncDialog
-          key={dialog.kind}
-          title={t(`cloudSyncE2ee.${dialogTitle}`)}
-          busy={working}
-          showClose={dialog.kind !== 'protocol'}
-          onClose={closeDialog}
-        >
-          {notice?.error && (
-            <p role="alert" style={{ color: 'var(--ol-err)' }}>
-              {t(`cloudSyncE2ee.${notice.key}`)}
-            </p>
-          )}
-          {dialog.kind === 'consent' && (
-            <ConsentForm
-              busy={working}
-              onConfirm={() => {
-                setNotice(null);
-                setDialog({ kind: 'protocol', intent: dialog.intent });
-              }}
-            />
-          )}
-          {dialog.kind === 'protocol' && (
-            <ProtocolWarning
-              busy={working}
-              onCancel={() => {
-                setNotice(null);
-                setDialog(null);
-              }}
-              onConfirm={() => {
-                const intent = dialog.intent;
-                setNotice(null);
-                setPreparingStep(true);
-                setDialog(null);
-                void perform(async (valid) => {
-                  await routePreparation(await prepareEncryptedSync(), intent, valid);
-                }).finally(() => {
-                  if (alive.current) setPreparingStep(false);
-                });
-              }}
-            />
-          )}
-          {(dialog.kind === 'create' || dialog.kind === 'unlock' || dialog.kind === 'password') && (
-            <PasswordForm
+      <ExitPresence
+        open={showLogin}
+        render={(closing) => (
+          <GithubLoginModal
+            closing={closing}
+            onClose={() => setShowLogin(false)}
+            onSuccess={(login) => {
+              setShowLogin(false);
+              void updatePrefs((value) => ({ ...value, marketplaceDevLogin: login }))
+                .then(() => loadRef.current())
+                .catch(showError);
+            }}
+          />
+        )}
+      />
+      <ExitPresence
+        open={!!dialog}
+        render={(closing) =>
+          dialog && (
+            <SyncDialog
+              closing={closing}
               key={dialog.kind}
-              mode={dialog.kind}
+              title={t(`cloudSyncE2ee.${dialogTitle}`)}
               busy={working}
-              onSubmit={submitPassword}
-            />
-          )}
-          {dialog.kind === 'restore' && (
-            <RestoreReview
-              key={dialog.preview.previewId}
-              preview={dialog.preview}
-              busy={working}
-              stale={
-                dialog.preview.observedRevision !== status?.remoteRevision ||
-                dialog.preview.localGeneration !== status?.localGeneration
-              }
-              onApply={applyRestore}
-            />
-          )}
-          {dialog.kind === 'disable' && (
-            <>
-              <p>{t('cloudSyncE2ee.disableDescription')}</p>
-              <Btn
-                variant="primary"
-                disabled={working}
-                onClick={() => simple(() => cloudSyncE2eeSetEnabled(false))}
-              >
-                {t('cloudSyncE2ee.confirmDisable')}
-              </Btn>
-            </>
-          )}
-          {dialog.kind === 'delete' && (
-            <DeleteConfirmation
-              busy={working}
-              backupRetentionDays={status?.backupRetentionDays ?? null}
-              onConfirm={() =>
-                simple(() =>
-                  cloudSyncE2eeDeleteRemote({
-                    expectedVaultId: dialog.vaultId,
-                    observedRevision: dialog.revision,
-                    confirmed: true,
-                  }),
-                )
-              }
-            />
-          )}
-          {working && status?.taskId && dialog.kind !== 'protocol' && (
-            <div className="ol-cloud-sync-actions">
-              <span role="status">{t('cloudSyncE2ee.working')}</span>
-              {taskControls}
-            </div>
-          )}
-        </SyncDialog>
-      )}
+              showClose={dialog.kind !== 'protocol'}
+              onClose={closeDialog}
+            >
+              {notice?.error && (
+                <p role="alert" style={{ color: 'var(--ol-err)' }}>
+                  {t(`cloudSyncE2ee.${notice.key}`)}
+                </p>
+              )}
+              {dialog.kind === 'consent' && (
+                <ConsentForm
+                  busy={working}
+                  onConfirm={() => {
+                    setNotice(null);
+                    setDialog({ kind: 'protocol', intent: dialog.intent });
+                  }}
+                />
+              )}
+              {dialog.kind === 'protocol' && (
+                <ProtocolWarning
+                  busy={working}
+                  onCancel={() => {
+                    setNotice(null);
+                    setDialog(null);
+                  }}
+                  onConfirm={() => {
+                    const intent = dialog.intent;
+                    setNotice(null);
+                    setPreparingStep(true);
+                    setDialog(null);
+                    void perform(async (valid) => {
+                      await routePreparation(await prepareEncryptedSync(), intent, valid);
+                    }).finally(() => {
+                      if (alive.current) setPreparingStep(false);
+                    });
+                  }}
+                />
+              )}
+              {(dialog.kind === 'create' ||
+                dialog.kind === 'unlock' ||
+                dialog.kind === 'password') && (
+                <PasswordForm
+                  key={dialog.kind}
+                  mode={dialog.kind}
+                  busy={working}
+                  onSubmit={submitPassword}
+                />
+              )}
+              {dialog.kind === 'restore' && (
+                <RestoreReview
+                  key={dialog.preview.previewId}
+                  preview={dialog.preview}
+                  busy={working}
+                  stale={
+                    dialog.preview.observedRevision !== status?.remoteRevision ||
+                    dialog.preview.localGeneration !== status?.localGeneration
+                  }
+                  onApply={applyRestore}
+                />
+              )}
+              {dialog.kind === 'disable' && (
+                <>
+                  <p>{t('cloudSyncE2ee.disableDescription')}</p>
+                  <Btn
+                    variant="primary"
+                    disabled={working}
+                    onClick={() => simple(() => cloudSyncE2eeSetEnabled(false))}
+                  >
+                    {t('cloudSyncE2ee.confirmDisable')}
+                  </Btn>
+                </>
+              )}
+              {dialog.kind === 'delete' && (
+                <DeleteConfirmation
+                  busy={working}
+                  backupRetentionDays={status?.backupRetentionDays ?? null}
+                  onConfirm={() =>
+                    simple(() =>
+                      cloudSyncE2eeDeleteRemote({
+                        expectedVaultId: dialog.vaultId,
+                        observedRevision: dialog.revision,
+                        confirmed: true,
+                      }),
+                    )
+                  }
+                />
+              )}
+              {working && status?.taskId && dialog.kind !== 'protocol' && (
+                <div className="ol-cloud-sync-actions">
+                  <span role="status">{t('cloudSyncE2ee.working')}</span>
+                  {taskControls}
+                </div>
+              )}
+            </SyncDialog>
+          )
+        }
+      />
     </Card>
   );
 }
@@ -1402,12 +1417,14 @@ function DeleteConfirmation({
 
 function SyncDialog({
   title,
+  closing = false,
   busy,
   showClose = true,
   onClose,
   children,
 }: {
   title: string;
+  closing?: boolean;
   busy: boolean;
   showClose?: boolean;
   onClose: () => void;
@@ -1432,7 +1449,7 @@ function SyncDialog({
     dialog.current?.focus();
   }, [title]);
   return (
-    <Modal zIndex={100} width="min(580px, 100%)" onClose={onClose}>
+    <Modal zIndex={100} width="min(580px, 100%)" onClose={onClose} closing={closing}>
       <div
         ref={dialog}
         role="dialog"

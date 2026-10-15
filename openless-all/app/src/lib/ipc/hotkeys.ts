@@ -61,7 +61,9 @@ export function validateShortcutBinding(binding: ShortcutBinding): Promise<void>
 }
 
 export function setDictationHotkey(binding: ShortcutBinding): Promise<void> {
-  return invokeOrMock('set_dictation_hotkey', { binding }, () => undefined);
+  return invokeOrMock('set_dictation_hotkey', { binding }, () => {
+    mockSetSettings({ ...mockSettings, dictationHotkey: binding });
+  });
 }
 
 // binding = null disables the hotkey. Once the Tauri side persists, the settings page re-reads prefs immediately.

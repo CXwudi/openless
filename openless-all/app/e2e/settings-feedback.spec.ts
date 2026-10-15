@@ -35,7 +35,7 @@ async function expectInViewport(page: Page) {
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height + 1);
 }
 
-test('explanatory labels replace help badges, open above the words and dismiss with Escape', async ({
+test('explanatory labels replace help badges, open beside the words and dismiss with Escape', async ({
   page,
 }) => {
   await settings(page, 'AI 服务与模型');
@@ -50,9 +50,9 @@ test('explanatory labels replace help badges, open above the words and dismiss w
   await expect(tooltip).toContainText('ASR');
   await expect(row.getByRole('tooltip')).toHaveCount(0);
   await expectInViewport(page);
-  expect(
-    (await tooltip.boundingBox())!.y + (await tooltip.boundingBox())!.height,
-  ).toBeLessThanOrEqual((await label.boundingBox())!.y);
+  expect((await tooltip.boundingBox())!.x).toBeGreaterThanOrEqual(
+    (await label.boundingBox())!.x + (await label.boundingBox())!.width,
+  );
   expect((await row.boundingBox())!.height).toBe(before!.height);
   expect((await row.boundingBox())!.width).toBe(before!.width);
   // Moving onto the popup must not make a multi-line explanation disappear.
@@ -80,7 +80,7 @@ test('experimental models show three compact switches; memory warnings stay in t
   await page.locator('[data-ol-advanced-entry="localModels"]').click();
   const section = page.locator('.ol-experimental-models');
   await expect(section.getByRole('switch')).toHaveCount(3);
-  await expect(section.locator('.ol-channel-local-hint, p')).toHaveCount(0);
+  await expect(section.locator('.ol-channel-local-hint, p:visible')).toHaveCount(0);
   expect((await section.boundingBox())!.height).toBeLessThan(200);
   const label = section.getByRole('button', { name: 'SenseVoice Small', exact: true });
   await label.hover();
@@ -114,7 +114,8 @@ for (const zoom of ['0.9', '1', '1.1']) {
     await expect(popup).toHaveCSS('opacity', '1');
     const anchor = (await trigger.boundingBox())!;
     const bounds = (await popup.boundingBox())!;
-    expect(Math.abs(bounds.x - anchor.x)).toBeLessThan(2);
+    const beside = bounds.x >= anchor.x + anchor.width || bounds.x + bounds.width <= anchor.x;
+    expect(beside).toBe(true);
     expect(Math.abs(bounds.width - anchor.width)).toBeLessThan(2);
     await page.keyboard.press('Escape');
     await expect(popup).toHaveCount(0);
@@ -131,7 +132,7 @@ for (const zoom of ['0.9', '1', '1.1']) {
     await expectInViewport(page);
     const hint = (await page.getByRole('tooltip').boundingBox())!;
     const labelBounds = (await label.boundingBox())!;
-    expect(Math.abs(hint.y + hint.height - labelBounds.y + 8)).toBeLessThan(3);
+    expect(hint.x).toBeGreaterThanOrEqual(labelBounds.x + labelBounds.width);
   });
 }
 

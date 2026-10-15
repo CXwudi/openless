@@ -174,6 +174,8 @@ const dependencies: Record<string, any> = {
   Icon: 'icon',
   GithubLoginModal: 'login',
   Modal: 'modal',
+  ExitPresence: 'exit-presence',
+  Collapse: 'collapse',
   Btn: 'button',
   Card: 'card',
   Toggle: 'toggle',
@@ -228,7 +230,12 @@ const dependencies: Record<string, any> = {
     return update({ authState: 'signed_out', syncState: 'disabled', account: null });
   },
 };
-const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props });
+const jsx = (type: unknown, props: Record<string, any>) => {
+  if (type === 'exit-presence') return props.open ? props.render(false) : null;
+  if (type === 'collapse')
+    return props.open ? { type: 'fragment', props: { children: props.children } } : null;
+  return { type, props };
+};
 const components = factory(
   ...imports.map((name) => dependencies[name]),
   {},

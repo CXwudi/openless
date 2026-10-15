@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useSyncExternalStore, type RefObject } from 'react';
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 
 import { keyboardInteraction } from './interactionMode';
 
@@ -7,6 +7,7 @@ const ENTER_MS = 240;
 const SETTINGS_ENTER_MS = 240;
 const SETTINGS_BACKDROP_MS = 220;
 const CONTENT_MS = 160;
+const CONTENT_EXIT_MS = 120;
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 let media: MediaQueryList | undefined;
 
@@ -49,7 +50,10 @@ function animate(
   const style = getComputedStyle(element);
   const easing = style.getPropertyValue(easingToken).trim();
   const previousWillChange = element.style.willChange;
-  element.style.willChange = 'opacity, transform';
+  // A flat page/backdrop fade must not create a transform containing block or
+  // promote its text as if it were scaling. Cards/indicators still need both.
+  element.style.willChange =
+    from.transform === 'none' && to.transform === 'none' ? 'opacity' : 'opacity, transform';
   const animation = element.animate([from, to], {
     duration,
     easing: easing || 'cubic-bezier(0.23, 1, 0.32, 1)',
@@ -84,13 +88,7 @@ export function useOverlayMotion(
   const interrupted = useRef<{ element: HTMLElement; frame: Frame } | null>(null);
   useLayoutEffect(() => {
     const element = ref.current;
-    if (
-      !element ||
-      !enabled ||
-      reduced ||
-      keyboardInteraction() ||
-      typeof element.animate !== 'function'
-    ) {
+    if (!element || !enabled || reduced || typeof element.animate !== 'function') {
       interrupted.current = null;
       return;
     }
@@ -243,12 +241,56 @@ export function useSelectionMotion(
   }, [groupRef, indicatorRef, selection, underline, reduced]);
 }
 
-/** Navigation never waits for an exit: latest content is interactive immediately. */
+/** Keep the outgoing page alive for its fade. Rapid navigation always settles on
+ * the latest destination; text is never scaled or translated during a page change. */
 export function usePageTransition<T extends string>(
   requested: T,
   ref: RefObject<HTMLElement>,
   _mobile: boolean,
 ) {
-  useContentMotion(ref, requested);
-  return requested;
+  const [displayed, setDisplayed] = useState(requested);
+  const painted = useRef(displayed);
+  const interrupted = useRef<{ element: HTMLElement; frame: Frame } | null>(null);
+  const reduced = useReducedMotion();
+  useLayoutEffect(() => {
+    const element = ref.current;
+    const entering = displayed === requested;
+    const changed = painted.current !== displayed;
+    painted.current = displayed;
+    if (!element || reduced || typeof element.animate !== 'function') {
+      interrupted.current = null;
+      if (!entering) setDisplayed(requested);
+      return;
+    }
+    const resume = interrupted.current?.element === element ? interrupted.current.frame : null;
+    interrupted.current = null;
+    if (entering && !changed && !resume) return;
+    const motion = animate(
+      element,
+      resume ?? (entering ? FADED : currentFrame(element)),
+      entering ? VISIBLE : FADED,
+      entering ? CONTENT_MS : CONTENT_EXIT_MS,
+      !entering,
+    );
+    element.inert = !entering;
+    let cancelled = false;
+    void motion.animation.finished
+      .then(() => {
+        if (cancelled) return;
+        motion.releaseLayer();
+        if (entering) motion.cancel();
+        else setDisplayed(requested);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      interrupted.current =
+        motion.animation.playState === 'running' || motion.animation.playState === 'paused'
+          ? { element, frame: currentFrame(element) }
+          : null;
+      element.inert = false;
+      motion.cancel();
+    };
+  }, [requested, displayed, ref, reduced]);
+  return displayed;
 }

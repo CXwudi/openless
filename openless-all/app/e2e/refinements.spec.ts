@@ -7,7 +7,7 @@ async function openShortcuts(page: Page) {
   await page.getByRole('button', { name: '快捷键', exact: true }).click();
 }
 
-test('shortcut search and categories live in the flat settings pane; keyboard entry is instant', async ({
+test('shortcut search and categories live in the flat settings pane; keyboard close preserves exit', async ({
   page,
 }) => {
   await openShortcuts(page);
@@ -28,15 +28,11 @@ test('shortcut search and categories live in the flat settings pane; keyboard en
   await expect(dialog.locator('.ol-shortcut-row[role="group"]')).toHaveCount(1);
   await expect(dialog.locator('.ol-shortcut-row[role="group"]')).toContainText('打开 OpenLess');
   await expect(dialog.getByText('Less Computer', { exact: true })).toHaveCount(0);
-  await dialog.getByRole('button', { name: '关闭', exact: true }).press('Enter');
+  await dialog.getByRole('button', { name: '返回应用', exact: true }).press('Enter');
   await expect(dialog).toHaveCount(0);
   await page.getByRole('button', { name: '设置', exact: true }).press('Enter');
   await expect(dialog).toBeVisible();
-  expect(
-    await dialog.evaluate(
-      (el) => el.getAnimations().filter((a) => a.id === 'ol-surface-enter').length,
-    ),
-  ).toBe(0);
+  await expect(page.locator('.ol-settings-workspace')).toHaveCSS('opacity', '1');
 });
 
 test('native scrolling has no JS wheel interception and is stable when stopped', async ({
@@ -52,7 +48,13 @@ test('native scrolling has no JS wheel interception and is stable when stopped',
     el.setAttribute('data-wheel-prevented', String(event.defaultPrevented));
   });
   await expect(content).toHaveAttribute('data-wheel-prevented', 'false');
-  await page.getByRole('button', { name: '录音与输入', exact: true }).click();
+  await page
+    .getByRole('navigation', { name: '设置分类' })
+    .getByRole('button', { name: '录音与输入', exact: true })
+    .click();
+  await expect(
+    content.locator('[data-section="general"] .ol-shortcut-binding').first(),
+  ).toBeVisible();
   await content.hover();
   await page.mouse.wheel(0, 450);
   await expect.poll(() => content.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);

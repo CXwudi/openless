@@ -18,7 +18,7 @@ import { Icon } from '../components/Icon';
 import { SavedToast } from '../components/SavedToast';
 import { ThinkingDots } from '../components/ThinkingDots';
 import { GithubLoginModal } from '../components/GithubLoginModal';
-import { PresenceModal } from '../components/ui/Modal';
+import { ExitPresence, PresenceModal } from '../components/ui/Modal';
 import {
   downloadMarketplacePack,
   fetchMarketplaceDetail,
@@ -1597,9 +1597,16 @@ export function Marketplace() {
       />
 
       {/* GitHub login dialog */}
-      {showLogin && (
-        <GithubLoginModal onClose={() => setShowLogin(false)} onSuccess={onLoginSuccess} />
-      )}
+      <ExitPresence
+        open={showLogin}
+        render={(closing) => (
+          <GithubLoginModal
+            closing={closing}
+            onClose={() => setShowLogin(false)}
+            onSuccess={onLoginSuccess}
+          />
+        )}
+      />
     </div>
   );
 }
