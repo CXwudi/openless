@@ -39,7 +39,6 @@ import { GithubLoginModal } from '../components/GithubLoginModal';
 import { Tooltip } from '../components/Tooltip';
 import {
   chatPanelFocusKeyboard,
-  getSettings,
   isTauri,
   lessComputerApprove,
   lessComputerSubmitText,
@@ -51,6 +50,7 @@ import {
   lessComputerWindowDismiss,
   marketplaceAuthStatus,
 } from '../lib/ipc';
+import { getSettings } from '../lib/ipc/settings';
 import { reconcileLessComputerReplay, reduceLessComputerVoice } from '../lib/lessComputerReplay';
 import {
   claimDictationResult,

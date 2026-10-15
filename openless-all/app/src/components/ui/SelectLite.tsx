@@ -532,7 +532,9 @@ export function SelectLite({
                           ? 'var(--ol-select-option-hover-bg)'
                           : 'transparent',
                       color: isSelected ? 'var(--ol-blue)' : 'var(--ol-ink)',
-                      fontWeight: isSelected ? 600 : 500,
+                      fontWeight: isSelected
+                        ? 'var(--ol-font-weight-semibold)'
+                        : 'var(--ol-font-weight-medium)',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',

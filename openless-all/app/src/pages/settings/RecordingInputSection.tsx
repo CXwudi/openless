@@ -258,7 +258,12 @@ export function RecordingInputSection() {
             }}
           >
             <div
-              style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ol-blue)', marginBottom: 4 }}
+              style={{
+                fontSize: 12.5,
+                fontWeight: 'var(--ol-font-weight-semibold)',
+                color: 'var(--ol-blue)',
+                marginBottom: 4,
+              }}
             >
               {t('settings.recording.migrationNoticeTitle')}
             </div>
@@ -333,7 +338,7 @@ export function RecordingInputSection() {
                   style={{
                     padding: '5px 14px',
                     fontSize: 12,
-                    fontWeight: 500,
+                    fontWeight: 'var(--ol-font-weight-medium)',
                     border: 0,
                     borderRadius: 6,
                     fontFamily: 'inherit',
@@ -547,7 +552,7 @@ export function RecordingInputSection() {
               style={{
                 padding: '5px 12px',
                 fontSize: 12,
-                fontWeight: 500,
+                fontWeight: 'var(--ol-font-weight-medium)',
                 fontFamily: 'inherit',
                 border: '0.5px solid var(--ol-line-strong)',
                 borderRadius: 8,

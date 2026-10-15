@@ -47,7 +47,7 @@ test('settings entrance paints its starting pose and progresses over time', asyn
     });
     observer.observe(document.body, { subtree: true, childList: true });
   });
-  await page.getByRole('button', { name: '设置', exact: true }).press('Enter');
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '设置', exact: true });
   await expect
     .poll(
@@ -134,7 +134,7 @@ test('closing during entry preserves the painted opacity and releases the dialog
   const before = Number(await dialog.getAttribute('data-test-entry-opacity'));
   expect(before).toBeGreaterThan(0);
   expect(before).toBeLessThan(1);
-  await dialog.getByRole('button', { name: '关闭', exact: true }).press('Enter');
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click();
   await expect(page.locator('body')).toHaveAttribute('data-test-exit-opacity', /.+/);
   const from = Number(await page.locator('body').getAttribute('data-test-exit-opacity'));
   expect(Math.abs(from - before)).toBeLessThan(0.001);
@@ -166,7 +166,8 @@ test('reduced motion keeps model gates and removes the closing delay', async ({ 
     ),
   ).toBe(0);
   await dialog.getByRole('button', { name: '关闭', exact: true }).click();
-  expect(await dialog.count()).toBe(0);
+  // React commits the effect-driven unmount asynchronously, even without an exit timer.
+  await expect(dialog).toHaveCount(0, { timeout: 100 });
 });
 
 test('mobile drawers retain their exit and can be opened again', async ({ page }) => {
@@ -189,7 +190,7 @@ test('mobile drawers retain their exit and can be opened again', async ({ page }
       attributeFilter: ['style'],
     });
   });
-  await drawer.getByRole('button', { name: '关闭', exact: true }).press('Enter');
+  await drawer.getByRole('button', { name: '关闭', exact: true }).click();
   await expect(page.locator('body')).toHaveAttribute('data-test-drawer-exit', 'true');
   await expect(drawer).toHaveCount(0);
   await more.click();
@@ -307,9 +308,9 @@ test('selection highlights move and settle correctly after a rapid mode return',
       return animation;
     };
   });
-  await dialog.getByRole('button', { name: '多模态模式', exact: true }).press('Enter');
+  await dialog.getByRole('button', { name: '多模态模式', exact: true }).click();
   await expect(page.locator('body')).toHaveAttribute('data-selection-moved', 'true');
-  await dialog.getByRole('button', { name: '传统模式', exact: true }).press('Enter');
+  await dialog.getByRole('button', { name: '传统模式', exact: true }).click();
   for (const selector of ['.ol-service-pipeline-indicator', '.ol-service-view-indicator']) {
     const indicator = dialog.locator(selector);
     await expect(indicator).toHaveAttribute('data-test-selection-from', /.+/);

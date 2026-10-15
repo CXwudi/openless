@@ -13,6 +13,7 @@ import { RemoteInputSection } from './RemoteInputSection';
 import { ShortcutsSection } from './ShortcutsSection';
 import { SelectionWorkspaceSection } from './SelectionWorkspaceSection';
 import { LanguageSection } from './LanguageSection';
+import { TypographySection } from './TypographySection';
 import { ThemeSection } from './ThemeSection';
 import { ProvidersSection } from './ChannelList';
 import { OmniChannelSection } from './ProvidersSection';
@@ -29,6 +30,7 @@ import { CodingAgentSection } from './CodingAgentSection';
 import { ClaudeConsoleSection } from './ClaudeConsoleSection';
 import { BetaChannelSection } from './BetaChannelSection';
 import { AutoUpdateSection } from './AutoUpdateSection';
+import { StartupDiagnostics } from './StartupDiagnostics';
 import { AboutSection } from './AboutSection';
 import { getPlatformCapabilities } from '../../lib/platform';
 import { listChannels } from '../../lib/ipc';
@@ -66,6 +68,7 @@ export function GeneralTab() {
   return (
     <>
       <RecordingInputSection />
+      <SelectionWorkspaceSection showShortcut={false} />
       {showRemoteInput && <RemoteInputSection />}
     </>
   );
@@ -98,18 +101,14 @@ export function InputMethodTab() {
 export function ShortcutsTab() {
   const platformCaps = usePlatformCaps();
   if (!platformCaps?.supportsDesktopHotkey) return null;
-  return (
-    <>
-      <ShortcutsSection />
-      <SelectionWorkspaceSection />
-    </>
-  );
+  return <ShortcutsSection />;
 }
 
 export function AppearanceTab() {
   return (
     <>
       <ThemeSection />
+      <TypographySection />
       <LanguageSection />
     </>
   );
@@ -236,7 +235,7 @@ export function ServicesTab({ asrNavigation = 0 }: { asrNavigation?: number } = 
           {views.map((id) => {
             if (id === 'models' && detectOS() === 'mac') {
               return (
-                <Tooltip key={id} content={t('experimentalAsr.retiredHint')} placement="bottom" wrap focusable>
+                <Tooltip key={id} content={t('experimentalAsr.retiredHint')} placement="bottom" wrap focusable trigger={<span />}>
                   <button type="button" disabled data-retired-local-models aria-label={t('modal.serviceViews.models')}
                     style={{ pointerEvents: 'none' }}>
                     <span>{t('modal.serviceViews.models')}</span>
@@ -346,7 +345,7 @@ export function PrivacyTab() {
             borderRadius: 999,
             background: 'var(--ol-surface)',
             color: 'var(--ol-blue)',
-            fontWeight: 600,
+            fontWeight: 'var(--ol-font-weight-semibold)',
             flexShrink: 0,
           }}
         >
@@ -376,8 +375,14 @@ export function AdvancedTab({
   pages: AdvancedPage[];
   page: AdvancedPageId | null;
   onOpenPage: (page: AdvancedPageId) => void;
+  experimentalAsr: ExperimentalAsrController;
+  onOpenAsr: () => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const [visited, setVisited] = useState<AdvancedPageId[]>([]);
+  useEffect(() => {
+    if (page) setVisited((current) => (current.includes(page) ? current : [...current, page]));
+  }, [page]);
   return (
     <>
       <div hidden={page !== null}>
@@ -433,6 +438,7 @@ export function AboutTab() {
   return (
     <>
       <AboutSection />
+      <StartupDiagnostics />
       {showUpdateControls && <BetaChannelSection />}
       {showUpdateControls && <AutoUpdateSection />}
     </>

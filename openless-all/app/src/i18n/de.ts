@@ -1,9 +1,11 @@
 import type { zhCN } from './zh-CN';
 
+import { uiRefinementEn as uiRefinement } from './uiRefinement';
 import { experimentalAsrEn as experimentalAsr } from './experimentalAsr';
 
 export const de: typeof zhCN = {
   experimentalAsr,
+  uiRefinement,
   voiceEdit: {
     title: 'Sprachbearbeitung',
     description:
@@ -1759,6 +1761,8 @@ export const de: typeof zhCN = {
         asrXiaomiMimo: 'Xiaomi MiMo ASR',
         asrIflytek: 'iFlytek Echtzeit-ASR',
         asrElevenLabs: 'ElevenLabs Scribe',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
         asrSherpaOnnxLocal: 'Lokales sherpa-onnx (experimentell)',
         asrFoundryLocalWhisper: 'Lokales Whisper (Foundry Local)',
         asrLocalWhisper: 'Lokales Whisper (Stapelverarbeitung)',

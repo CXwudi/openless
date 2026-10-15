@@ -162,7 +162,7 @@ function LocalAsrGroupTitle({ children }: { children: ReactNode }) {
     <div
       style={{
         fontSize: 12.5,
-        fontWeight: 600,
+        fontWeight: 'var(--ol-font-weight-semibold)',
         color: 'var(--ol-ink-3)',
         letterSpacing: '0.02em',
         margin: '18px 0 8px',
@@ -2098,7 +2098,7 @@ export function LocalAsr({ embedded = false }: LocalAsrProps = {}) {
                     <div
                       style={{
                         fontSize: 12,
-                        fontWeight: 600,
+                        fontWeight: 'var(--ol-font-weight-semibold)',
                         color: 'var(--ol-ink-4)',
                         marginBottom: 4,
                       }}
@@ -2160,7 +2160,7 @@ export function LocalAsr({ embedded = false }: LocalAsrProps = {}) {
                         <div
                           style={{
                             fontSize: 12,
-                            fontWeight: 600,
+                            fontWeight: 'var(--ol-font-weight-semibold)',
                             color: 'var(--ol-ink-4)',
                             marginBottom: 4,
                           }}
@@ -2205,7 +2205,7 @@ export function LocalAsr({ embedded = false }: LocalAsrProps = {}) {
                         <div
                           style={{
                             fontSize: 12,
-                            fontWeight: 600,
+                            fontWeight: 'var(--ol-font-weight-semibold)',
                             color: 'var(--ol-ink-4)',
                             marginBottom: 4,
                           }}

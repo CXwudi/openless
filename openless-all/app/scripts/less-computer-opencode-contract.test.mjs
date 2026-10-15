@@ -14,7 +14,8 @@ assert(
   'Windows must expose Less Computer configuration and its text entry point',
 );
 assert(
-  shortcuts.includes("(os === 'mac' || os === 'win') && ("),
+  /if \(os === 'mac' \|\| os === 'win'\)\s*commands\.push\(/.test(shortcuts) &&
+    shortcuts.includes('binding: prefs.codingAgentVoiceHotkey'),
   'Windows must expose the Less Computer voice shortcut',
 );
 // Platform visibility is covered by navigation.test.ts; the detail route must

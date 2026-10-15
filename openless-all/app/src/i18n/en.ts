@@ -3,10 +3,12 @@
 import type { zhCN } from './zh-CN';
 
 // Type-level guarantee that en mirrors the zh-CN shape.
+import { uiRefinementEn as uiRefinement } from './uiRefinement';
 import { experimentalAsrEn as experimentalAsr } from './experimentalAsr';
 
 export const en: typeof zhCN = {
   experimentalAsr,
+  uiRefinement,
   voiceEdit: {
     title: 'Voice editing session',
     description:
@@ -1721,6 +1723,8 @@ export const en: typeof zhCN = {
         asrTencentCloud: 'Tencent Cloud Hunyuan Realtime ASR',
         asrGemini: 'Google Gemini Transcribe',
         asrElevenLabs: 'ElevenLabs Scribe',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
         asrSherpaOnnxLocal: 'Local sherpa-onnx (Experimental)',
         asrFoundryLocalWhisper: 'Local Whisper (Foundry Local)',
         asrLocalWhisper: 'Local Whisper (batch)',
@@ -2388,7 +2392,7 @@ export const en: typeof zhCN = {
     descriptions: {
       general: 'Choose a microphone, adjust recording and text input, or connect your phone.',
       inputMethod: 'Configure the Android overlay and input method for phone typing.',
-      shortcuts: 'Set up shortcuts and choose what happens when you select text.',
+      shortcuts: 'Search, browse and customize keyboard shortcuts.',
       services:
         'Choose speech recognition and text processing services. Manage channels, local models and connections.',
       appearance: 'Adjust the theme, page layout and interface language for comfortable reading.',
@@ -2411,7 +2415,7 @@ export const en: typeof zhCN = {
 
     sections: {
       appearance: 'Appearance & language',
-      shortcuts: 'Shortcuts & selection',
+      shortcuts: 'Shortcuts',
       general: 'Recording & input',
       inputMethod: 'Input method',
       services: 'AI services & models',
