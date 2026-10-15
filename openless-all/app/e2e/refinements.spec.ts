@@ -56,16 +56,14 @@ test('native scrolling has no JS wheel interception and is stable when stopped',
     content.locator('[data-section="general"] .ol-shortcut-binding').first(),
   ).toBeVisible();
   await content.hover();
+  const destination = await content.evaluate((el) =>
+    Math.min(el.scrollTop + 450, el.scrollHeight - el.clientHeight),
+  );
   await page.mouse.wheel(0, 450);
-  await expect.poll(() => content.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  // Let the browser's own wheel smoothing settle; its duration is OS-specific.
-  await expect
-    .poll(async () => {
-      const before = await content.evaluate((el) => el.scrollTop);
-      await page.waitForTimeout(120);
-      return Math.abs((await content.evaluate((el) => el.scrollTop)) - before);
-    })
-    .toBe(0);
+  // A single unchanged 120ms sample can still be WebKit's intermediate 11px
+  // compositor position. Await the complete clamped native wheel displacement
+  // before asserting rest; this is stronger than accepting any positive offset.
+  await expect.poll(() => content.evaluate((el) => el.scrollTop)).toBe(destination);
   const stopped = await content.evaluate((el) => el.scrollTop);
   await page.waitForTimeout(160);
   expect(await content.evaluate((el) => el.scrollTop)).toBe(stopped);
