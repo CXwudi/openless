@@ -3307,24 +3307,31 @@ pub(crate) fn show_less_computer_window<R: tauri::Runtime>(
         .ok_or_else(|| "Backend is not initialized".to_string())?
         .ensure_testing_features_enabled()
         .map_err(|error| error.message)?;
+    // Creation stays off the synchronous WebView IPC thread. Visibility and
+    // the opt-in recheck run together on the UI thread; acknowledge their result
+    // so the caller does not mistake a queued action for a successful opening.
     let window = ensure_less_computer_window(app)?;
     let app_for_show = app.clone();
+    let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
     app.run_on_main_thread(move || {
-        if app_for_show
+        let result = app_for_show
             .try_state::<Arc<openless_core::OpenLessBackend>>()
-            .is_none_or(|backend| backend.ensure_testing_features_enabled().is_err())
-        {
-            return;
+            .ok_or_else(|| "Backend is not initialized".to_string())
+            .and_then(|backend| backend.ensure_testing_features_enabled().map_err(|error| error.message))
+            .and_then(|()| {
+                window.show().map_err(|error| {
+                    log::warn!("[less-computer] show failed: {error}");
+                    format!("Less Computer window show failed: {error}")
+                })
+            });
+        if result.is_ok() {
+            LESS_COMPUTER_PANEL_EPOCH.fetch_add(1, Ordering::SeqCst);
+            let _ = app_for_show.emit_to("less-computer", "chat-panel:shown", serde_json::json!({}));
         }
-        if let Err(error) = window.show() {
-            log::warn!("[less-computer] show failed: {error}");
-            return;
-        }
-        LESS_COMPUTER_PANEL_EPOCH.fetch_add(1, Ordering::SeqCst);
-        let _ = app_for_show.emit_to("less-computer", "chat-panel:shown", serde_json::json!({}));
+        let _ = result_tx.send(result);
     })
     .map_err(|error| format!("Less Computer window show dispatch failed: {error}"))?;
-    Ok(())
+    result_rx.recv().map_err(|error| format!("Less Computer window show task failed: {error}"))?
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]

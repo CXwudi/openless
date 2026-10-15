@@ -120,7 +120,36 @@ export function ExperimentalAsrSection({
         const percent = downloadPercent(status);
         return (
           <section key={status.model} data-experimental-model={status.model}>
-            <SettingRow label={status.model === 'text-stream' ? `${name} · ${t('experimentalAsr.recommended')}` : name}>
+            <SettingRow
+              label={
+                status.model === 'text-stream'
+                  ? `${name} · ${t('experimentalAsr.recommended')}`
+                  : name
+              }
+              desc={
+                <>
+                  <p>
+                    {t(
+                      status.model === 'text-stream'
+                        ? 'experimentalAsr.textStreamDescription'
+                        : status.model === 'sense-voice'
+                          ? 'experimentalAsr.senseVoiceDescription'
+                          : 'experimentalAsr.gemmaDescription',
+                    )}
+                  </p>
+                  <p>{t('experimentalAsr.description')}</p>
+                  <p>{t('experimentalAsr.memoryHint')}</p>
+                  {status.model === 'text-stream' && <p>{t('experimentalAsr.streamHint')}</p>}
+                  <p>{t('experimentalAsr.deleteHint')}</p>
+                  <p>{t('experimentalAsr.pipelineHint')}</p>
+                  {!status.available && (
+                    <p>
+                      {t(`experimentalAsr.${status.unavailableReason ?? 'desktopRuntimeRequired'}`)}
+                    </p>
+                  )}
+                </>
+              }
+            >
               <Toggle
                 label={name}
                 on={status.enabled}
@@ -176,25 +205,6 @@ export function ExperimentalAsrSection({
                 </Btn>
               )}
             </SettingRow>
-            <div style={{ fontSize: 12, color: 'var(--ol-ink-3)', lineHeight: 1.6 }}>
-              <p>
-                {t(
-                  status.model === 'text-stream' ? 'experimentalAsr.textStreamDescription' : status.model === 'sense-voice'
-                    ? 'experimentalAsr.senseVoiceDescription'
-                    : 'experimentalAsr.gemmaDescription',
-                )}
-              </p>
-              <p>{t('experimentalAsr.description')}</p>
-              <p>{t('experimentalAsr.memoryHint')}</p>
-              {status.model === 'text-stream' && <p>{t('experimentalAsr.streamHint')}</p>}
-              <p>{t('experimentalAsr.deleteHint')}</p>
-              <p>{t('experimentalAsr.pipelineHint')}</p>
-              {!status.available && (
-                <p>
-                  {t(`experimentalAsr.${status.unavailableReason ?? 'desktopRuntimeRequired'}`)}
-                </p>
-              )}
-            </div>
             {status.phase === 'downloading' && (
               <progress
                 aria-label={t('experimentalAsr.downloadProgress', { name })}

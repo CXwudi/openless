@@ -148,9 +148,9 @@ test('reduced motion keeps model gates and removes the closing delay', async ({ 
   const dialog = page.getByRole('dialog', { name: '设置', exact: true });
   await dialog.getByRole('button', { name: 'AI 服务与模型', exact: true }).click();
   await expect(dialog.getByRole('button', { name: /^多模态模型/ })).toBeDisabled();
-  await dialog.getByRole('button', { name: '本地模型', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: '本地模型', exact: true })).toBeDisabled();
   await dialog.getByRole('button', { name: '多模态模式', exact: true }).click();
-  for (const label of ['语言模型', '语音识别', '本地模型']) {
+  for (const label of ['语言模型', '语音识别']) {
     await expect(dialog.getByRole('button', { name: new RegExp(`^${label}。`) })).toBeDisabled();
   }
   await expect(dialog.getByRole('button', { name: '多模态模型', exact: true })).toHaveAttribute(
@@ -255,7 +255,7 @@ test('multimodal settings fit one desktop page and keep inactive notices below l
       return {
         verticalOverflow: scroll.scrollHeight - scroll.clientHeight,
         horizontalOverflow: navigation.scrollWidth - navigation.clientWidth,
-        entries: navigation.querySelectorAll(':scope > button').length,
+        entries: navigation.querySelectorAll('button').length,
         badgesBelowLabels: [...navigation.querySelectorAll('.ol-service-inactive-tag')].every(
           (badge) =>
             badge.getBoundingClientRect().top >=

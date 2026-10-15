@@ -236,11 +236,25 @@ export function ServicesTab({ asrNavigation = 0 }: { asrNavigation?: number } = 
           {views.map((id) => {
             if (id === 'models' && detectOS() === 'mac') {
               return (
-                <Tooltip key={id} content={t('experimentalAsr.retiredHint')} placement="bottom" wrap focusable trigger={<span />}>
-                  <button type="button" disabled data-retired-local-models aria-label={t('modal.serviceViews.models')}
-                    style={{ pointerEvents: 'none' }}>
+                <Tooltip
+                  key={id}
+                  content={t('experimentalAsr.retiredHint')}
+                  placement="bottom"
+                  wrap
+                  focusable
+                  trigger={<span />}
+                >
+                  <button
+                    type="button"
+                    disabled
+                    data-retired-local-models
+                    aria-label={t('modal.serviceViews.models')}
+                    style={{ pointerEvents: 'none' }}
+                  >
                     <span>{t('modal.serviceViews.models')}</span>
-                    <span className="ol-service-inactive-tag">{t('experimentalAsr.retiredLabel')}</span>
+                    <span className="ol-service-inactive-tag">
+                      {t('experimentalAsr.retiredLabel')}
+                    </span>
                   </button>
                 </Tooltip>
               );

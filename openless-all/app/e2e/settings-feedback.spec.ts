@@ -73,19 +73,20 @@ test('explanatory labels replace help badges, open above the words and dismiss w
   await expect(tooltip).toBeHidden();
 });
 
-test('experimental models show two compact switches; descriptions stay in the shared popup', async ({
+test('experimental models show three compact switches; memory warnings stay in the shared popup', async ({
   page,
 }) => {
   await settings(page, '实验与扩展');
   await page.locator('[data-ol-advanced-entry="localModels"]').click();
   const section = page.locator('.ol-experimental-models');
-  await expect(section.getByRole('switch')).toHaveCount(2);
+  await expect(section.getByRole('switch')).toHaveCount(3);
   await expect(section.locator('.ol-channel-local-hint, p')).toHaveCount(0);
   expect((await section.boundingBox())!.height).toBeLessThan(200);
   const label = section.getByRole('button', { name: 'SenseVoice Small', exact: true });
   await label.hover();
   await expect(page.getByRole('tooltip')).toContainText('240 MB');
   await expect(page.getByRole('tooltip')).toContainText('删除');
+  await expect(page.getByRole('tooltip')).toContainText('使用本地模型会增加内存占用');
   await expect(section.getByRole('tooltip')).toHaveCount(0);
   await label.click();
   await expect(section.getByRole('switch', { name: 'SenseVoice Small' })).toHaveAttribute(

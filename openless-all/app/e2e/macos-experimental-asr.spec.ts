@@ -24,11 +24,15 @@ test('Mac removes legacy manager and exposes lazy experiments first with memory 
   const stream = page.locator('[data-experimental-model="text-stream"]');
   await expect(page.locator('[data-experimental-model]').first()).toHaveAttribute('data-experimental-model', 'text-stream');
   await expect(stream).toContainText('推荐 · 实时流式');
-  await expect(stream).toContainText('localhost:7890/stream');
+  await stream.getByRole('button', { name: /TextStream/ }).hover();
+  await expect(page.getByRole('tooltip')).toContainText('localhost:7890/stream');
+  await page.keyboard.press('Escape');
   const sense = page.locator('[data-experimental-model="sense-voice"]');
   const gemma = page.locator('[data-experimental-model="embedding-gemma"]');
-  await expect(sense).toContainText('使用本地模型会增加内存占用');
-  await expect(sense).toContainText('开始录音时才加载');
+  await sense.getByRole('button', { name: 'SenseVoice Small', exact: true }).hover();
+  await expect(page.getByRole('tooltip')).toContainText('使用本地模型会增加内存占用');
+  await expect(page.getByRole('tooltip')).toContainText('开始录音时才加载');
+  await page.keyboard.press('Escape');
   await expect(sense.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
   await stream.getByRole('switch').click();
   await sense.getByRole('switch').click();
@@ -36,7 +40,13 @@ test('Mac removes legacy manager and exposes lazy experiments first with memory 
   const guide = page.getByRole('dialog', { name: '下载完成，还需选择语音渠道' });
   await expect(guide).toBeVisible();
   await expect(guide).toContainText('下载完成不代表已经替换当前渠道');
+  // Downloads finish independently. Confirm the aggregate only after all three
+  // are ready, rather than racing a legitimate second completion prompt.
+  for (const name of ['TextStream', 'SenseVoice Small', 'Embedding Gemma']) {
+    await expect(guide).toContainText(name);
+  }
   await guide.getByRole('button', { name: '确定，前往语音渠道' }).click();
+  await expect(guide).toBeHidden();
   await expect(page.getByRole('heading', { name: '语音识别渠道', exact: true })).toBeVisible();
   await expect(page.locator('[data-channel-provider="experimental-sensevoice"]')).toHaveCount(1);
   await expect(page.locator('[data-channel-provider="experimental-textstream"]')).toHaveCount(1);

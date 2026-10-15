@@ -33,7 +33,7 @@ test('testing features require opt-in and retain their settings across revocatio
   await expect(lessDetail).toHaveCount(0);
   await expect(lessEntry).toHaveCount(0);
   await expect(consoleEntry).toHaveCount(0);
-  await dialog.getByRole('button', { name: '快捷键与选区', exact: true }).click();
+  await dialog.getByRole('button', { name: '快捷键', exact: true }).click();
   await expect(dialog.getByText('Less Computer', { exact: true })).toHaveCount(0);
   await dialog.getByRole('button', { name: '实验与扩展', exact: true }).click();
   await beta.click();

@@ -25,7 +25,9 @@ test('shortcut search and categories live in the flat settings pane; keyboard en
     .getByRole('navigation', { name: '分类' })
     .getByRole('button', { name: '系统', exact: true })
     .click();
-  expect(await dialog.locator('.ol-shortcut-row').count()).toBeGreaterThan(1);
+  await expect(dialog.locator('.ol-shortcut-row[role="group"]')).toHaveCount(1);
+  await expect(dialog.locator('.ol-shortcut-row[role="group"]')).toContainText('打开 OpenLess');
+  await expect(dialog.getByText('Less Computer', { exact: true })).toHaveCount(0);
   await dialog.getByRole('button', { name: '关闭', exact: true }).press('Enter');
   await expect(dialog).toHaveCount(0);
   await page.getByRole('button', { name: '设置', exact: true }).press('Enter');
@@ -281,10 +283,14 @@ test('text height grows with contents and chips give the selection actual layout
 test('swipe departure is directional, removable and undoable', async ({ page }) => {
   await page.goto(fixture);
   const card = page.getByTestId('card');
+  await card.scrollIntoViewIfNeeded();
   const rect = (await card.boundingBox())!;
   await page.mouse.move(rect.x + 100, rect.y + 70);
   await page.mouse.down();
   await page.mouse.move(rect.x + 270, rect.y + 70, { steps: 12 });
+  await expect.poll(() => card.evaluate((element) =>
+    new DOMMatrixReadOnly(getComputedStyle(element).transform).m41,
+  )).toBeGreaterThan(120);
   await page.mouse.up();
   await expect(card).toHaveCount(0);
   await page.getByRole('button', { name: 'Undo', exact: true }).click();

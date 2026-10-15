@@ -524,9 +524,11 @@ export function ChannelList({
           const providerLabel = presetLabel(kind, channel.providerType, t, descriptors);
           const label = channel.name.trim() || providerLabel;
           const model = isExperimentalAsrProvider(channel.providerType)
-            ? channel.providerType === 'experimental-textstream' ? 'TextStream' : channel.providerType === 'experimental-sensevoice'
-              ? 'SenseVoice Small'
-              : 'Embedding Gemma'
+            ? channel.providerType === 'experimental-textstream'
+              ? 'TextStream'
+              : channel.providerType === 'experimental-sensevoice'
+                ? 'SenseVoice Small'
+                : 'Embedding Gemma'
             : (models[channel.id] ?? '');
           const descriptor = descriptors.find((item) => item.providerType === channel.providerType);
           const localEngine = descriptor?.authRequirement === 'none';
@@ -573,8 +575,12 @@ export function ChannelList({
                   type="button"
                   className="ol-drag-handle"
                   disabled={retired}
-                  onPointerDown={(event) => { if (!retired) reorder.onPointerDown(event, channel.id); }}
-                  onKeyDown={(event) => { if (!retired) reorder.onKeyDown(event, channel.id); }}
+                  onPointerDown={(event) => {
+                    if (!retired) reorder.onPointerDown(event, channel.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (!retired) reorder.onKeyDown(event, channel.id);
+                  }}
                   onClick={(event) => event.stopPropagation()}
                   title={t('uiRefinement.reorderHint')}
                   aria-label={`${label} · ${t('settings.channels.dragHint')}`}
@@ -704,7 +710,20 @@ export function ChannelList({
               </div>
             </div>
           );
-          return retired ? <Tooltip key={channel.id} content={t('experimentalAsr.retiredHint')} placement="bottom" wrap focusable trigger={<span />}>{content}</Tooltip> : content;
+          return retired ? (
+            <Tooltip
+              key={channel.id}
+              content={t('experimentalAsr.retiredHint')}
+              placement="bottom"
+              wrap
+              focusable
+              trigger={<span />}
+            >
+              {content}
+            </Tooltip>
+          ) : (
+            content
+          );
         })}
       </div>
 
