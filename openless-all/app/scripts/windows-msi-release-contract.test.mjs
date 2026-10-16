@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
 const workflow = yaml.load(
@@ -64,7 +65,13 @@ const publisher = steps.find((s) => s.uses?.startsWith('softprops/action-gh-rele
 assert.equal(publisher.with.tag_name, '${{ env.OPENLESS_RELEASE_TAG }}');
 assert.equal(publisher.with.draft, true);
 assert.ok(steps.find((s) => s.name === 'Confirm repair target remains draft'));
+const smokeTooling = steps.find((s) => s.name === 'Checkout installer smoke tooling');
+assert.equal(smokeTooling.with.ref, '${{ github.workflow_sha }}');
+assert.equal(smokeTooling.with['sparse-checkout'], 'openless-all/app/scripts/windows-ime-install-smoke.ps1');
+assert.equal(smokeTooling.with['persist-credentials'], false);
 const smoke = steps.find((s) => s.name === 'Verify Windows installers register TSF IME');
+assert.match(smoke.run, /-File \$smokeScript/);
+assert.ok(steps.indexOf(smokeTooling) < steps.indexOf(smoke));
 assert.equal(smoke.if, "matrix.platform == 'windows-latest'");
 assert.match(smoke.run, /DisableAutomaticApplicationShutdown/);
 assert.match(smoke.run, /-PropertyType DWord -Value 1 -Force/);
@@ -75,6 +82,18 @@ for (const kind of ['nsis', 'msi']) {
   assert.match(smoke.run, new RegExp(kind.toUpperCase() + ' installer smoke failed'));
 }
 assert.doesNotMatch(smoke.run, /continue-on-error|SkipUninstall|exit 0/);
+const smokeSource = readFileSync(new URL('windows-ime-install-smoke.ps1', import.meta.url), 'utf8');
+assert.match(smokeSource, /\[int\[\]\]\$SuccessExitCodes = @\(0\)/);
+assert.match(smokeSource, /\$process.ExitCode -notin \$SuccessExitCodes/);
+assert.match(smokeSource, /-Label "MSI install" -SuccessExitCodes @\(0, 3010\)/);
+assert.match(smokeSource, /-Label "MSI uninstall" -SuccessExitCodes @\(0, 3010\)/);
+assert.doesNotMatch(smokeSource, /-Label "NSIS (?:install|uninstall)" -SuccessExitCodes/);
+assert.ok(smokeSource.indexOf('$installRoot = Assert-OpenLessImeInstalled') > smokeSource.indexOf('-Label "MSI install"'));
+if (process.platform === 'win32') {
+  const runtime = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('windows-ime-install-smoke.test.ps1', import.meta.url))], { encoding: 'utf8' });
+  assert.equal(runtime.status, 0, runtime.stdout + runtime.stderr);
+  console.log(runtime.stdout.trim());
+}
 const schema = JSON.parse(
   readFileSync(
     new URL('../node_modules/@tauri-apps/cli/config.schema.json', import.meta.url),
