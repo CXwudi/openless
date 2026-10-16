@@ -429,21 +429,38 @@ jobs:
         shell: pwsh
         working-directory: 'openless-all/app'
         run: |
-          $nsis = Get-ChildItem "src-tauri\target\release\bundle\nsis\*.exe" -ErrorAction Stop | Select-Object -First 1
-          if (-not $nsis) { throw "NSIS installer not found." }
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows-ime-install-smoke.ps1 -InstallerPath $nsis.FullName -InstallerKind nsis
-          if ($LASTEXITCODE -ne 0) {
-            throw "NSIS installer smoke failed with exit $LASTEXITCODE"
-          }
-          if ($env:OPENLESS_SKIP_WINDOWS_MSI -eq '1') {
-            Write-Host "[ok] Skipping MSI smoke for beta release channel."
-            return
-          }
-          $msi = Get-ChildItem "src-tauri\target\release\bundle\msi\*.msi" -ErrorAction Stop | Select-Object -First 1
-          if (-not $msi) { throw "MSI installer not found." }
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows-ime-install-smoke.ps1 -InstallerPath $msi.FullName -InstallerKind msi
-          if ($LASTEXITCODE -ne 0) {
-            throw "MSI installer smoke failed with exit $LASTEXITCODE"
+          # The disposable runner must not be shut down by MSI Restart Manager
+          # after the NSIS install/uninstall has loaded the TSF DLLs. /norestart
+          # suppresses an OS reboot, not Restart Manager application shutdown.
+          # Keep both real installer/registry checks; restore the machine policy.
+          $policy = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer'
+          $policyName = 'DisableAutomaticApplicationShutdown'
+          $previous = (Get-ItemProperty -LiteralPath $policy -Name $policyName -ErrorAction SilentlyContinue).$policyName
+          try {
+            New-Item -Path $policy -Force | Out-Null
+            New-ItemProperty -LiteralPath $policy -Name $policyName -PropertyType DWord -Value 1 -Force | Out-Null
+            $nsis = Get-ChildItem "src-tauri\target\release\bundle\nsis\*.exe" -ErrorAction Stop | Select-Object -First 1
+            if (-not $nsis) { throw "NSIS installer not found." }
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows-ime-install-smoke.ps1 -InstallerPath $nsis.FullName -InstallerKind nsis
+            if ($LASTEXITCODE -ne 0) {
+              throw "NSIS installer smoke failed with exit $LASTEXITCODE"
+            }
+            if ($env:OPENLESS_SKIP_WINDOWS_MSI -eq '1') {
+              Write-Host "[ok] Skipping MSI smoke for beta release channel."
+              return
+            }
+            $msi = Get-ChildItem "src-tauri\target\release\bundle\msi\*.msi" -ErrorAction Stop | Select-Object -First 1
+            if (-not $msi) { throw "MSI installer not found." }
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows-ime-install-smoke.ps1 -InstallerPath $msi.FullName -InstallerKind msi
+            if ($LASTEXITCODE -ne 0) {
+              throw "MSI installer smoke failed with exit $LASTEXITCODE"
+            }
+          } finally {
+            if ($null -ne $previous) {
+              New-ItemProperty -LiteralPath $policy -Name $policyName -PropertyType DWord -Value $previous -Force | Out-Null
+            } else {
+              Remove-ItemProperty -LiteralPath $policy -Name $policyName -ErrorAction SilentlyContinue
+            }
           }
 
       - name: Disambiguate macOS updater bundle filename

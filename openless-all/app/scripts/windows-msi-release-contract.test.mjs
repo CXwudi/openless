@@ -64,6 +64,17 @@ const publisher = steps.find((s) => s.uses?.startsWith('softprops/action-gh-rele
 assert.equal(publisher.with.tag_name, '${{ env.OPENLESS_RELEASE_TAG }}');
 assert.equal(publisher.with.draft, true);
 assert.ok(steps.find((s) => s.name === 'Confirm repair target remains draft'));
+const smoke = steps.find((s) => s.name === 'Verify Windows installers register TSF IME');
+assert.equal(smoke.if, "matrix.platform == 'windows-latest'");
+assert.match(smoke.run, /DisableAutomaticApplicationShutdown/);
+assert.match(smoke.run, /-PropertyType DWord -Value 1 -Force/);
+assert.ok(smoke.run.indexOf('-Value 1 -Force') < smoke.run.indexOf('-InstallerKind nsis'));
+assert.match(smoke.run, /finally[\s\S]*-Value \$previous[\s\S]*Remove-ItemProperty/);
+for (const kind of ['nsis', 'msi']) {
+  assert.match(smoke.run, new RegExp('-InstallerKind ' + kind));
+  assert.match(smoke.run, new RegExp(kind.toUpperCase() + ' installer smoke failed'));
+}
+assert.doesNotMatch(smoke.run, /continue-on-error|SkipUninstall|exit 0/);
 const schema = JSON.parse(
   readFileSync(
     new URL('../node_modules/@tauri-apps/cli/config.schema.json', import.meta.url),
