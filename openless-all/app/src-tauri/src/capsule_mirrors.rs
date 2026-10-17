@@ -1,10 +1,9 @@
-//! Windows: show the recording capsule on every monitor at once (issue #1057).
+//! Windows capsule placement and compatibility cleanup for legacy mirror windows.
+//! Recording now follows the cursor's display; do not duplicate it on every screen.
 //!
 //! The primary `capsule` / `capsule-rail` windows stay the source of truth: they own the
-//! card modes, the layout cache and the event routing. Every other monitor gets a mirror
-//! pair `capsule-mirror-<n>` / `capsule-rail-mirror-<n>` that loads the same frontend route
-//! and receives the same state events. Mirrors are created lazily, reused, and hidden when
-//! the capsule is not visible.
+//! card modes, the layout cache and the event routing. Legacy mirror labels are kept
+//! only for compatibility cleanup; `mirror_targets` returns no additional windows.
 //!
 //! Pure placement / topology helpers in this module are platform-agnostic and unit-tested
 //! on every CI host. Window creation stays Windows-only.
@@ -18,8 +17,7 @@ use tauri::{AppHandle, Manager, Monitor, WebviewUrl, WebviewWindow, WebviewWindo
 pub(crate) const CAPSULE_MIRROR_PREFIX: &str = "capsule-mirror-";
 pub(crate) const RAIL_MIRROR_PREFIX: &str = "capsule-rail-mirror-";
 
-/// Upper bound on mirrored monitors (the primary monitor is not mirrored, so 8 displays
-/// are covered in total). Capability globs cover these labels.
+/// Legacy slot count used to hide any previously created mirror windows.
 pub(crate) const MAX_CAPSULE_MIRRORS: usize = 7;
 
 /// Physical description of one monitor in virtual-desktop coordinates.
@@ -68,26 +66,35 @@ impl MonitorRect {
             (self.left, self.top, self.right, self.bottom)
         }
     }
-
-    fn is_same_monitor(&self, other: &Self) -> bool {
-        self.left == other.left
-            && self.top == other.top
-            && self.right == other.right
-            && self.bottom == other.bottom
-    }
 }
 
-/// The OS primary monitor, where the primary capsule lives. Stable across foreground changes,
-/// unlike the old "monitor of the focused window" placement.
+/// Follow the mouse, not the capsule HWND (which can still be on the old screen).
+/// Fall back to the primary display if the cursor cannot be queried.
 #[cfg(target_os = "windows")]
-pub(crate) fn primary_monitor_rect<R: tauri::Runtime>(
+pub(crate) fn target_monitor_rect<R: tauri::Runtime>(
     window: &WebviewWindow<R>,
 ) -> Option<MonitorRect> {
+    use windows::Win32::{Foundation::POINT, UI::WindowsAndMessaging::GetCursorPos};
+    let monitors = all_monitor_rects(window);
+    let mut point = POINT::default();
+    // SAFETY: GetCursorPos writes only to this initialized POINT.
+    if unsafe { GetCursorPos(&mut point) }.is_ok() {
+        if let Some(monitor) = monitor_at_point(&monitors, point.x, point.y) {
+            return Some(monitor);
+        }
+    }
     window
         .primary_monitor()
         .ok()
         .flatten()
         .map(|monitor| MonitorRect::from_tauri(&monitor))
+}
+
+pub(crate) fn monitor_at_point(monitors: &[MonitorRect], x: i32, y: i32) -> Option<MonitorRect> {
+    monitors
+        .iter()
+        .copied()
+        .find(|m| x >= m.left && x < m.right && y >= m.top && y < m.bottom)
 }
 
 /// Every monitor currently connected, in the OS enumeration order.
@@ -122,15 +129,10 @@ pub(crate) fn capsule_placement(
     (phys_w.max(1) as u32, phys_h.max(1) as u32, x, y)
 }
 
-/// Every monitor except the primary one, in enumeration order, capped at
-/// [`MAX_CAPSULE_MIRRORS`].
-pub(crate) fn mirror_targets(monitors: &[MonitorRect], primary: MonitorRect) -> Vec<MonitorRect> {
-    monitors
-        .iter()
-        .copied()
-        .filter(|monitor| !monitor.is_same_monitor(&primary))
-        .take(MAX_CAPSULE_MIRRORS)
-        .collect()
+/// Single-display policy: no mirrors. The existing sync path still hides old
+/// mirror slots, preserving cleanup, card modes and transcript-rail ownership.
+pub(crate) fn mirror_targets(_monitors: &[MonitorRect], _primary: MonitorRect) -> Vec<MonitorRect> {
+    Vec::new()
 }
 
 /// Stable hash of the monitor layout. Changes when a monitor is connected, disconnected,
@@ -271,14 +273,27 @@ mod tests {
     }
 
     #[test]
-    fn mirror_targets_excludes_primary_and_keeps_enumeration_order() {
+    fn multi_monitor_recording_has_no_duplicate_capsules() {
         let primary = monitor(0, 0, 1920, 1080, 40, 1.0);
         let left = monitor(-1920, 0, 1920, 1080, 40, 1.0);
         let right = monitor(1920, 0, 2560, 1440, 40, 1.5);
 
         let targets = mirror_targets(&[left, primary, right], primary);
 
-        assert_eq!(targets, vec![left, right]);
+        assert!(targets.is_empty());
+        assert_eq!(
+            monitor_at_point(&[left, primary, right], -20, 50),
+            Some(left)
+        );
+        assert_eq!(
+            monitor_at_point(&[left, primary, right], 2000, 50),
+            Some(right)
+        );
+        assert_eq!(
+            monitor_at_point(&[left, primary, right], 10, 50),
+            Some(primary)
+        );
+        assert_eq!(monitor_at_point(&[left, primary, right], 99999, 50), None);
     }
 
     #[test]
@@ -288,13 +303,13 @@ mod tests {
     }
 
     #[test]
-    fn mirror_targets_caps_the_number_of_mirrors() {
+    fn additional_displays_never_create_mirror_windows() {
         let primary = monitor(0, 0, 1920, 1080, 0, 1.0);
         let mut monitors = vec![primary];
         for i in 1..=(MAX_CAPSULE_MIRRORS as i32 + 3) {
             monitors.push(monitor(i * 1920, 0, 1920, 1080, 0, 1.0));
         }
-        assert_eq!(mirror_targets(&monitors, primary).len(), MAX_CAPSULE_MIRRORS);
+        assert!(mirror_targets(&monitors, primary).is_empty());
     }
 
     #[test]

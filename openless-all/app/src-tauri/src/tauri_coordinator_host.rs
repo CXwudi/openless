@@ -991,10 +991,9 @@ impl TauriCapsuleWindow {
         }
     }
 
-    /// Windows: makes every mirror capsule / transcript rail match the primary window —
-    /// visibility, geometry, cursor passthrough and hit-testing — so the capsule shows on
-    /// all monitors (issue #1057). Queued on the main thread because window creation and
-    /// show/hide must run there. A no-op when nothing relevant changed.
+    /// Windows: reconcile legacy mirror slots. Single-display policy produces no
+    /// mirror targets, so old slots are hidden while the primary capsule/rail follow
+    /// the cursor. Window operations remain on the main thread.
     #[cfg(target_os = "windows")]
     pub(crate) fn sync_capsule_mirrors(&self) {
         let _ = self.run_on_main_thread(|capsule| capsule.apply_capsule_mirrors());
@@ -1013,7 +1012,7 @@ impl TauriCapsuleWindow {
         let Some(primary) = self.window() else {
             return;
         };
-        let Some(primary_rect) = crate::capsule_mirrors::primary_monitor_rect(&primary) else {
+        let Some(primary_rect) = crate::capsule_mirrors::target_monitor_rect(&primary) else {
             return;
         };
         let monitors = crate::capsule_mirrors::all_monitor_rects(&primary);
@@ -1286,8 +1285,8 @@ impl TauriCapsuleWindow {
     ) -> Option<CapsuleLayoutState> {
         #[cfg(target_os = "windows")]
         {
-            // The primary capsule lives on the OS primary monitor (see capsule_mirrors).
-            if let Some(mon) = crate::capsule_mirrors::primary_monitor_rect(window) {
+            // Use the same cursor display as placement, including mixed-DPI layouts.
+            if let Some(mon) = crate::capsule_mirrors::target_monitor_rect(window) {
                 let monitors = crate::capsule_mirrors::all_monitor_rects(window);
                 return Some(CapsuleLayoutState {
                     translation_active,
