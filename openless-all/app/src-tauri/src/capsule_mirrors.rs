@@ -1,18 +1,19 @@
-//! Windows capsule placement and compatibility cleanup for legacy mirror windows.
-//! Recording now follows the cursor's display; do not duplicate it on every screen.
+//! Native capsule display policy: follow the pointer by default, mirror only
+//! when the user explicitly chooses all attached displays.
 //!
 //! The primary `capsule` / `capsule-rail` windows stay the source of truth: they own the
 //! card modes, the layout cache and the event routing. Legacy mirror labels are kept
-//! only for compatibility cleanup; `mirror_targets` returns no additional windows.
+//! for opt-in mirrors; cursor-only mode creates no additional windows.
 //!
 //! Pure placement / topology helpers in this module are platform-agnostic and unit-tested
-//! on every CI host. Window creation stays Windows-only.
+//! on every CI host. Native mirror creation supports macOS and Windows.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use tauri::{AppHandle, Manager, Monitor, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use crate::types::CapsuleDisplayMode;
 
 pub(crate) const CAPSULE_MIRROR_PREFIX: &str = "capsule-mirror-";
 pub(crate) const RAIL_MIRROR_PREFIX: &str = "capsule-rail-mirror-";
@@ -36,7 +37,7 @@ pub(crate) struct MonitorRect {
 }
 
 impl MonitorRect {
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     pub(crate) fn from_tauri(monitor: &Monitor) -> Self {
         let position = monitor.position();
         let size = monitor.size();
@@ -97,8 +98,33 @@ pub(crate) fn monitor_at_point(monitors: &[MonitorRect], x: i32, y: i32) -> Opti
         .find(|m| x >= m.left && x < m.right && y >= m.top && y < m.bottom)
 }
 
+/// Match the macOS pointer-based primary placement without querying the old window position.
+#[cfg(target_os = "macos")]
+pub(crate) fn target_monitor_rect<R: tauri::Runtime>(
+    window: &WebviewWindow<R>,
+) -> Option<MonitorRect> {
+    if let Some(m) = crate::capsule_target_monitor(window) {
+        return Some(MonitorRect {
+            left: m.physical_x,
+            top: m.physical_y,
+            right: m.physical_x + m.physical_width as i32,
+            bottom: m.physical_y + m.physical_height as i32,
+            work_left: m.work_x,
+            work_top: m.work_y,
+            work_right: m.work_x + m.work_width as i32,
+            work_bottom: m.work_y + m.work_height as i32,
+            scale: m.scale,
+        });
+    }
+    window
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| MonitorRect::from_tauri(&m))
+}
+
 /// Every monitor currently connected, in the OS enumeration order.
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) fn all_monitor_rects<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Vec<MonitorRect> {
     window
         .available_monitors()
@@ -129,10 +155,24 @@ pub(crate) fn capsule_placement(
     (phys_w.max(1) as u32, phys_h.max(1) as u32, x, y)
 }
 
-/// Single-display policy: no mirrors. The existing sync path still hides old
-/// mirror slots, preserving cleanup, card modes and transcript-rail ownership.
-pub(crate) fn mirror_targets(_monitors: &[MonitorRect], _primary: MonitorRect) -> Vec<MonitorRect> {
-    Vec::new()
+/// Mirror only on explicit opt-in, excluding the display already hosting the primary.
+pub(crate) fn mirror_targets(
+    mode: CapsuleDisplayMode,
+    monitors: &[MonitorRect],
+    primary: MonitorRect,
+) -> Vec<MonitorRect> {
+    if mode != CapsuleDisplayMode::AllScreens {
+        return Vec::new();
+    }
+    monitors
+        .iter()
+        .copied()
+        .filter(|m| {
+            (m.left, m.top, m.right, m.bottom)
+                != (primary.left, primary.top, primary.right, primary.bottom)
+        })
+        .take(MAX_CAPSULE_MIRRORS)
+        .collect()
 }
 
 /// Stable hash of the monitor layout. Changes when a monitor is connected, disconnected,
@@ -186,7 +226,7 @@ pub(crate) fn mirror_label(prefix: &str, index: usize) -> String {
 }
 
 /// Labels of existing mirror windows whose label starts with `prefix`.
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) fn existing_mirror_labels<R: tauri::Runtime>(
     app: &AppHandle<R>,
     prefix: &str,
@@ -199,7 +239,7 @@ pub(crate) fn existing_mirror_labels<R: tauri::Runtime>(
 }
 
 /// Returns the capsule mirror with `label`, creating it hidden when it does not exist yet.
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) fn ensure_capsule_mirror<R: tauri::Runtime>(
     app: &AppHandle<R>,
     label: &str,
@@ -207,7 +247,7 @@ pub(crate) fn ensure_capsule_mirror<R: tauri::Runtime>(
     if let Some(window) = app.get_webview_window(label) {
         return Ok(window);
     }
-    WebviewWindowBuilder::new(
+    let window = WebviewWindowBuilder::new(
         app,
         label,
         WebviewUrl::App("index.html?window=capsule".into()),
@@ -223,7 +263,26 @@ pub(crate) fn ensure_capsule_mirror<R: tauri::Runtime>(
     .focused(false)
     .visible(false)
     .accept_first_mouse(true)
-    .build()
+    .build()?;
+    #[cfg(target_os = "macos")]
+    {
+        use tauri_nspanel::cocoa::appkit::NSWindowCollectionBehavior;
+        use tauri_nspanel::WebviewWindowExt;
+        let panel = match window.to_panel() {
+            Ok(panel) => panel,
+            Err(error) => {
+                let _ = window.close();
+                return Err(error);
+            }
+        };
+        panel.set_style_mask(1 << 7); // Non-activating, like the primary capsule.
+        panel.set_level(25);
+        panel.set_collection_behaviour(
+            NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary
+                | NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces,
+        );
+    }
+    Ok(window)
 }
 
 /// Returns the transcript-rail mirror with `label`, creating it hidden when needed.
@@ -278,9 +337,30 @@ mod tests {
         let left = monitor(-1920, 0, 1920, 1080, 40, 1.0);
         let right = monitor(1920, 0, 2560, 1440, 40, 1.5);
 
-        let targets = mirror_targets(&[left, primary, right], primary);
+        let targets = mirror_targets(
+            CapsuleDisplayMode::CursorScreen,
+            &[left, primary, right],
+            primary,
+        );
 
         assert!(targets.is_empty());
+        assert_eq!(
+            mirror_targets(
+                CapsuleDisplayMode::AllScreens,
+                &[left, primary, right],
+                primary
+            ),
+            vec![left, right]
+        );
+        assert_eq!(
+            mirror_targets(
+                CapsuleDisplayMode::AllScreens,
+                &[left, primary, right],
+                right
+            ),
+            vec![left, primary]
+        );
+        assert!(mirror_targets(CapsuleDisplayMode::AllScreens, &[primary], primary).is_empty());
         assert_eq!(
             monitor_at_point(&[left, primary, right], -20, 50),
             Some(left)
@@ -299,17 +379,21 @@ mod tests {
     #[test]
     fn mirror_targets_is_empty_on_single_monitor() {
         let primary = monitor(0, 0, 1920, 1080, 40, 1.0);
-        assert!(mirror_targets(&[primary], primary).is_empty());
+        assert!(mirror_targets(CapsuleDisplayMode::CursorScreen, &[primary], primary).is_empty());
     }
 
     #[test]
-    fn additional_displays_never_create_mirror_windows() {
+    fn cursor_only_never_mirrors_and_all_screens_is_bounded() {
         let primary = monitor(0, 0, 1920, 1080, 0, 1.0);
         let mut monitors = vec![primary];
         for i in 1..=(MAX_CAPSULE_MIRRORS as i32 + 3) {
             monitors.push(monitor(i * 1920, 0, 1920, 1080, 0, 1.0));
         }
-        assert!(mirror_targets(&monitors, primary).is_empty());
+        assert!(mirror_targets(CapsuleDisplayMode::CursorScreen, &monitors, primary).is_empty());
+        assert_eq!(
+            mirror_targets(CapsuleDisplayMode::AllScreens, &monitors, primary).len(),
+            MAX_CAPSULE_MIRRORS
+        );
     }
 
     #[test]
