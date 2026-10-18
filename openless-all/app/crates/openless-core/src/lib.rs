@@ -380,4 +380,6 @@ pub use voice_edit_session::{
     VoiceEditSession, VoiceEditSnapshot, VoiceEditTarget, VoiceEditTurn,
 };
 
+pub mod ime_cloud;
+pub mod ime_dictionary;
 pub mod preference_patch;
