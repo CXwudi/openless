@@ -1076,8 +1076,11 @@ impl Coordinator {
                     AndroidOverlayTrigger::Background => "background",
                     AndroidOverlayTrigger::Keyboard => "keyboard",
                     AndroidOverlayTrigger::Always => "always",
+                    AndroidOverlayTrigger::Never => "never",
                 }
             }
+            let from = from.normalized();
+            let to = to.normalized();
             if from == to {
                 return;
             }
@@ -1086,20 +1089,15 @@ impl Coordinator {
                 overlay_trigger_log_name(from),
                 overlay_trigger_log_name(to),
             );
-            match (from, to) {
-                (
-                    AndroidOverlayTrigger::Background | AndroidOverlayTrigger::Keyboard,
-                    AndroidOverlayTrigger::Always,
-                ) => {
+            match to {
+                AndroidOverlayTrigger::Always => {
                     let _ = crate::android::replace_android_overlay();
                 }
-                (
-                    AndroidOverlayTrigger::Always,
-                    AndroidOverlayTrigger::Background | AndroidOverlayTrigger::Keyboard,
-                ) => {
+                AndroidOverlayTrigger::Background
+                | AndroidOverlayTrigger::Keyboard
+                | AndroidOverlayTrigger::Never => {
                     let _ = crate::android::hide_android_overlay();
                 }
-                _ => {}
             }
         }
         let _ = (from, to);
@@ -1113,7 +1111,9 @@ impl Coordinator {
                 AndroidOverlayTrigger::Always => {
                     let _ = crate::android::replace_android_overlay();
                 }
-                AndroidOverlayTrigger::Background | AndroidOverlayTrigger::Keyboard => {
+                AndroidOverlayTrigger::Background
+                | AndroidOverlayTrigger::Keyboard
+                | AndroidOverlayTrigger::Never => {
                     let _ = crate::android::hide_android_overlay();
                 }
             }

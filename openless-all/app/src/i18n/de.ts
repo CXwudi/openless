@@ -2163,6 +2163,7 @@ export const de: typeof zhCN = {
         background: 'Wenn die App im Hintergrund ist',
         keyboard: 'Wenn die Tastatur erscheint',
         always: 'Immer sichtbar',
+        never: 'Nie anzeigen',
       },
       androidOverlayTriggerHint: {
         background:
@@ -2170,6 +2171,7 @@ export const de: typeof zhCN = {
         keyboard:
           'Dieser Modus wird nicht weitergeführt. Bestehende Einstellungen werden auf „Im Hintergrund“ zurückgesetzt.',
         always: 'Jederzeit verfügbar, aber dauerhaft auf dem Bildschirm.',
+        never: 'Wird nie automatisch angezeigt; die Tastatur bleibt nutzbar.',
       },
       androidOverlayTriggerDisabled: {
         keyboard:
