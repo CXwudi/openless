@@ -1499,7 +1499,7 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
                 val row2 = LinearLayout(this).apply { gravity = android.view.Gravity.CENTER }
                 row2.addView(View(this), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 0.5f))
                 listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
-                    .zip(listOf("@", "#", "$", "%", "&", "-", "+", "(", ")"))
+                    .zip(listOf("~", "@", "#", "!", "%", "&", "*", "(", ")"))
                     .forEach { (key, symbol) -> row2.addView(buildEnglishCharKey(key, 1f, swipeSymbol = symbol)) }
                 row2.addView(View(this), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 0.5f))
                 root.addView(row2, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -1507,7 +1507,7 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
                 val row3 = LinearLayout(this).apply { gravity = android.view.Gravity.CENTER }
                 row3.addView(keyboardKey("⇧", 1.5f, action = { cycleEnglishShift() }))
                 listOf("z", "x", "c", "v", "b", "n", "m")
-                    .zip(listOf(":", ";", "'", ".", ",", "!", "?"))
+                    .zip(listOf("'", "/", "-", "_", ":", ";", "?"))
                     .forEach { (key, symbol) -> row3.addView(buildEnglishCharKey(key, 1f, swipeSymbol = symbol)) }
                 row3.addView(
                     keyboardKey("⌫", 1.5f, action = { englishDeleteBackward() }, repeatOnLongPress = true, repeatAction = { englishDeleteBackward() }).apply {
@@ -1541,9 +1541,17 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
         // only these two English bottom-row labels are meant to match the
         // letters' new weight for now. Size/color/position left exactly as
         // keyboardKey() already set them.
-        val modeButton = keyboardKey(if (englishLayer == EnglishLayer.LETTERS) "123" else "ABC", 1.3f, action = {
-            handleEnglishBottomModeToggle()
-        }).apply { typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) }
+        // Swipe up on "123" for a comma and on Space for a full stop — the
+        // two marks the letter grid's own swipe-up symbols leave out. Neither
+        // key shows a hint for it; the preview bubble names the mark mid-swipe.
+        val onLetters = englishLayer == EnglishLayer.LETTERS
+        val modeButton = keyboardKey(
+            if (onLetters) "123" else "ABC",
+            1.3f,
+            action = { handleEnglishBottomModeToggle() },
+            swipeUpAction = if (onLetters) ({ commitEnglishChar(",") }) else null,
+            swipePreview = if (onLetters) "," else null,
+        ).apply { typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) }
         // "Space" stays keyboardKey()'s own plain centered label (own
         // View, own vertical centering, untouched by the hint) — per
         // real-device feedback, side-by-side (hint right-aligned next to
@@ -1559,18 +1567,20 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
             finalizeEnglishComposingWord()
             rimePinyinController.clear()
             currentInputConnection?.commitText(" ", 1)
-        }, longPressAction = { toggleLatinInputMode() }).apply {
+        }, swipeUpAction = { commitEnglishChar(".") }, swipePreview = ".", longPressAction = { toggleLatinInputMode() }).apply {
             // Same size as Return (17sp — keyboardKey()'s own special case
             // for that label), per real-device feedback.
             textSize = 17f
         }
         // Own View, overlaid on top of spaceButton (not inside its own
-        // text) — left-aligned, vertically centered, non-interactive so
-        // touches still reach the key beneath it. Shows BOTH labels
-        // stacked (拼音 always on top, 英文 always on the bottom — fixed
-        // position, per user request) rather than just naming the target
-        // mode — whichever is currently active is cherry red, the other
-        // gray, so long-press's effect is legible at a glance either way.
+        // text) — left-aligned and vertically centered. The hint keeps its
+        // own tap/long-press target, while upward swipes are delegated to
+        // spaceButton so the key's existing preview and commit handling is
+        // shared. Shows BOTH labels (拼音 always on top, 英文 always on the
+        // bottom — fixed position, per user request) rather than just naming
+        // the target mode — whichever is currently active is cherry red, the
+        // other gray, so long-press's effect is legible at a glance either
+        // way.
         val spaceHint = TextView(this).apply {
             val pinyinLabel = ui("拼音", "PINYIN")
             val englishLabel = ui("英文", "ENGLISH")
@@ -1598,6 +1608,71 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
             // Keep the hint above the raised space key so its tap target is
             // the visible mode label rather than the key underneath it.
             translationZ = dp(10).toFloat()
+        }
+        var forwardingSpaceSwipe = false
+        var spaceHintLongPressed = false
+        var spaceHintDown: MotionEvent? = null
+        fun dispatchSpaceTouch(event: MotionEvent) {
+            val forwarded = MotionEvent.obtain(event)
+            val hintLocation = IntArray(2)
+            val spaceLocation = IntArray(2)
+            spaceHint.getLocationOnScreen(hintLocation)
+            spaceButton.getLocationOnScreen(spaceLocation)
+            forwarded.offsetLocation(
+                (hintLocation[0] - spaceLocation[0]).toFloat(),
+                (hintLocation[1] - spaceLocation[1]).toFloat(),
+            )
+            spaceButton.dispatchTouchEvent(forwarded)
+            forwarded.recycle()
+        }
+        spaceHint.setOnLongClickListener {
+            spaceHintLongPressed = true
+            toggleLatinInputMode()
+            true
+        }
+        spaceHint.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    spaceHintDown?.recycle()
+                    spaceHintDown = MotionEvent.obtain(event)
+                    forwardingSpaceSwipe = false
+                    spaceHintLongPressed = false
+                    false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!forwardingSpaceSwipe && !spaceHintLongPressed && spaceHintDown != null &&
+                        spaceHintDown!!.y - event.y >= dp(10)
+                    ) {
+                        forwardingSpaceSwipe = true
+                        view.cancelLongPress()
+                        view.isPressed = false
+                        view.parent?.requestDisallowInterceptTouchEvent(true)
+                        spaceHintDown?.let { dispatchSpaceTouch(it) }
+                        dispatchSpaceTouch(event)
+                        true
+                    } else if (forwardingSpaceSwipe) {
+                        dispatchSpaceTouch(event)
+                        true
+                    } else {
+                        false
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (forwardingSpaceSwipe) {
+                        dispatchSpaceTouch(event)
+                        view.isPressed = false
+                        forwardingSpaceSwipe = false
+                        spaceHintDown?.recycle()
+                        spaceHintDown = null
+                        true
+                    } else {
+                        spaceHintDown?.recycle()
+                        spaceHintDown = null
+                        false
+                    }
+                }
+                else -> forwardingSpaceSwipe
+            }
         }
         val spaceWrapper = FrameLayout(this).apply {
             addView(spaceButton, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -2619,6 +2694,8 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
+                        // An out-of-bounds swipe may not dispatch a click to clear this flag.
+                        suppressNextClick = false
                         downX = event.x
                         downY = event.y
                         horizontalDragArmed = false
@@ -2787,7 +2864,7 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
      * instead (a "sloppy key", same idea as most predictive keyboards).
      *
      * @param swipeSymbol Any key that has one — top-row digits (q..p ->
-     *   1..0), row2's @#$%&-+() and row3's :;'.,!? — swiping up commits
+     *   1..0), row2's ~@#!%&*() and row3's '/-_:;? — swiping up commits
      *   this symbol instead of the letter, same interaction as the stroke
      *   panel's own swipe-up keys (see keyboardKey()'s swipeUpAction/
      *   swipePreview). Shown as a small standalone hint pinned to the very
