@@ -2202,6 +2202,9 @@ export const en: typeof zhCN = {
       localAsrDesc:
         'Move transcription from cloud ASR to on-device inference. Offline / privacy-sensitive use only.',
       localAsrWarningShort: 'Local inference is slower; under-spec hardware may drop words.',
+      localAsrFallbackLabel: 'Use the local model when cloud ASR fails',
+      localAsrFallbackDesc:
+        'On a weak or missing connection, transcribe the recording with the downloaded local model instead of waiting for cloud retries. Requires a downloaded local model.',
       qwen3Desc: 'Once enabled, the ASR provider will be taken over.',
       sherpaDesc: 'Once enabled, the ASR provider will be taken over.',
       foundryDesc: 'Once enabled, the ASR provider will be taken over.',

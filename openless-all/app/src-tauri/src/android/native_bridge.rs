@@ -1330,6 +1330,51 @@ mod jni_exports {
         spawn_remove_correction_rule(pattern_str);
     }
 
+    /// "local", "cloud" or "unavailable": which recognizer the next dictation
+    /// uses (OpenLessBackend::asr_route()), for the keyboard's status dot.
+    /// Blocks on a credential read — call it off the main thread.
+    #[no_mangle]
+    pub unsafe extern "system" fn Java_com_openless_app_OpenLessNative_nativeAsrRoute(
+        env: *mut JNIEnv,
+        _class: JClass,
+    ) -> jstring {
+        let route = match CORE_BACKEND.get() {
+            Some(backend) => match tauri::async_runtime::block_on(backend.asr_route()) {
+                openless_core::AsrRoute::Local => "local",
+                openless_core::AsrRoute::LocalRaw => "localRaw",
+                openless_core::AsrRoute::Cloud => "cloud",
+                openless_core::AsrRoute::Unavailable => "unavailable",
+            },
+            None => "unavailable",
+        };
+        match JniEnv::from_raw(env) {
+            Ok(mut env) => crate::android::jni::android::export_jstring(&mut env, route),
+            Err(_) => std::ptr::null_mut(),
+        }
+    }
+
+    /// "<local>,<cloud>,<latest>" from history, latest being "local", "cloud"
+    /// or empty; null when the backend is not up.
+    #[no_mangle]
+    pub unsafe extern "system" fn Java_com_openless_app_OpenLessNative_nativeAsrUsage(
+        env: *mut JNIEnv,
+        _class: JClass,
+    ) -> jstring {
+        let Some(usage) = CORE_BACKEND.get().and_then(|backend| backend.asr_usage().ok()) else {
+            return std::ptr::null_mut();
+        };
+        let latest = match usage.last_local {
+            Some(true) => "local",
+            Some(false) => "cloud",
+            None => "",
+        };
+        let encoded = format!("{},{},{}", usage.local, usage.cloud, latest);
+        match JniEnv::from_raw(env) {
+            Ok(mut env) => crate::android::jni::android::export_jstring(&mut env, &encoded),
+            Err(_) => std::ptr::null_mut(),
+        }
+    }
+
     #[no_mangle]
     pub unsafe extern "system" fn Java_com_openless_app_OpenLessNative_nativeBackendSnapshot(
         env: *mut JNIEnv,

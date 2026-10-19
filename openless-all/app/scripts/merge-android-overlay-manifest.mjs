@@ -14,6 +14,8 @@ const PERMISSIONS = [
   'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
   'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
   'android.permission.POST_NOTIFICATIONS',
+  // The keyboard's status dot shows pure-local raw output while offline.
+  'android.permission.ACCESS_NETWORK_STATE',
 ];
 
 const APPLICATION_SNIPPET = `

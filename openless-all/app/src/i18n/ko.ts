@@ -2156,6 +2156,9 @@ export const ko: typeof zhCN = {
       localAsrDesc:
         '전사를 클라우드에서 로컬 추론으로 전환합니다. 오프라인 / 프라이버시용에만 권장됩니다.',
       localAsrWarningShort: '로컬 추론은 느리며, 사양 부족 시 글자 누락이 발생할 수 있습니다.',
+      localAsrFallbackLabel: '클라우드 인식이 실패하면 로컬 모델 사용',
+      localAsrFallbackDesc:
+        '네트워크가 불안정하거나 오프라인일 때 클라우드 재시도를 기다리지 않고 다운로드한 로컬 모델로 녹음을 인식합니다. 로컬 모델을 먼저 다운로드해야 합니다.',
       qwen3Desc: '활성화하면 ASR 프로바이더가 인수됩니다.',
       sherpaDesc: '활성화하면 ASR 프로바이더가 인수됩니다.',
       foundryDesc: '활성화하면 ASR 프로바이더가 인수됩니다.',

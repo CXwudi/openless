@@ -1,6 +1,6 @@
 use futures_util::future::BoxFuture;
 use openless_core::{
-    normalize_foundry_language_hint, normalize_sherpa_language_hint, BackendConfig,
+    normalize_foundry_language_hint, normalize_sherpa_language_hint, AsrRoute, BackendConfig,
     BackendDependencies, BackendError, BackendErrorCode, BackendEventKind, ChannelKind,
     ChannelMutation, ChannelMutationResult, ChannelSummary, CredentialKey, CredentialStore,
     CredentialsStatus, FoundryRuntimeSource, InMemoryCredentialStore, LocalAsrActivationRequest,
@@ -578,6 +578,199 @@ async fn channel_test_requires_a_non_blank_transcript() {
         runtime.tested_providers.lock().unwrap().as_slice(),
         ["local-qwen3-c", "local-qwen3-c", "local-qwen3-c"]
     );
+    let _ = std::fs::remove_dir_all(data_dir);
+}
+
+#[tokio::test]
+async fn foundry_channel_test_uses_the_foundry_runtime() {
+    let (data_dir, runtime, backend) = local_asr_backend();
+    let target = LocalAsrTarget::parse(LocalAsrRuntime::Foundry, "whisper-small").unwrap();
+    backend
+        .services()
+        .local_asr
+        .set_active_model(target.clone())
+        .await
+        .unwrap();
+    let channel_id = backend
+        .create_channel(
+            ChannelKind::Asr,
+            "foundry-local-whisper".into(),
+            "Foundry Local".into(),
+        )
+        .await
+        .unwrap();
+
+    *runtime.test_transcript.lock().unwrap() = "Hello from Foundry".into();
+    let result = backend
+        .services()
+        .local_asr
+        .test_channel(channel_id)
+        .await
+        .unwrap();
+
+    assert_eq!(result.target, target);
+    assert_eq!(result.backend, "foundry-local-whisper");
+    assert_eq!(result.transcribed_text, "Hello from Foundry");
+    assert_eq!(
+        runtime.tested_providers.lock().unwrap().as_slice(),
+        ["foundry-local-whisper"]
+    );
+    let _ = std::fs::remove_dir_all(data_dir);
+}
+
+#[tokio::test]
+async fn sherpa_channel_test_uses_the_sherpa_runtime() {
+    let (data_dir, runtime, backend) = local_asr_backend();
+    let target =
+        LocalAsrTarget::parse(LocalAsrRuntime::SherpaOnnx, "sense-voice-small-zh").unwrap();
+    let model_store =
+        ModelStore::new(ModelStoreConfig::new(data_dir.join("models")).unwrap()).unwrap();
+    let model_dir = model_store.model_dir(&target).unwrap();
+    std::fs::create_dir_all(&model_dir).unwrap();
+    std::fs::write(
+        model_dir.join(openless_core::MODEL_READY_SENTINEL),
+        b"ready",
+    )
+    .unwrap();
+    std::fs::write(model_dir.join("model.int8.onnx"), b"model").unwrap();
+    std::fs::write(model_dir.join("tokens.txt"), b"tokens").unwrap();
+
+    backend
+        .services()
+        .local_asr
+        .set_active_model(target.clone())
+        .await
+        .unwrap();
+    let channel_id = backend
+        .create_channel(
+            ChannelKind::Asr,
+            "sherpa-onnx-local".into(),
+            "Local Sherpa".into(),
+        )
+        .await
+        .unwrap();
+
+    *runtime.test_transcript.lock().unwrap() = "Hello from Sherpa".into();
+    let result = backend
+        .services()
+        .local_asr
+        .test_channel(channel_id)
+        .await
+        .unwrap();
+
+    assert_eq!(result.target, target);
+    assert_eq!(result.backend, "sherpa-onnx-local");
+    assert_eq!(result.transcribed_text, "Hello from Sherpa");
+    assert_eq!(
+        runtime.tested_providers.lock().unwrap().as_slice(),
+        ["sherpa-onnx-local"]
+    );
+    let _ = std::fs::remove_dir_all(data_dir);
+}
+
+#[cfg(target_os = "windows")]
+#[tokio::test]
+async fn cloud_route_switches_to_local_when_unconfigured_or_disabled() {
+    let (data_dir, _, backend) = local_asr_backend();
+    let target =
+        LocalAsrTarget::parse(LocalAsrRuntime::SherpaOnnx, "sense-voice-small-zh").unwrap();
+    install_fixture(&data_dir, &target);
+    backend
+        .services()
+        .local_asr
+        .set_active_model(target)
+        .await
+        .unwrap();
+    let channel = backend
+        .create_channel(ChannelKind::Asr, "whisper".into(), "Cloud ASR".into())
+        .await
+        .unwrap();
+    backend
+        .set_active_provider(ProviderSlot::Asr, channel.clone())
+        .await
+        .unwrap();
+    assert_eq!(backend.asr_route().await, AsrRoute::LocalRaw);
+    backend
+        .set_channel_enabled(ChannelKind::Asr, channel, false)
+        .await
+        .unwrap();
+    assert_eq!(backend.asr_route().await, AsrRoute::LocalRaw);
+    let _ = std::fs::remove_dir_all(data_dir);
+}
+
+#[tokio::test]
+async fn disabled_local_channel_does_not_switch_to_a_different_local_model() {
+    let (data_dir, _runtime, backend) = local_asr_backend_with_credentials(
+        Arc::new(InMemoryCredentialStore::default()),
+        Some("sherpa-onnx-local"),
+    );
+    let target =
+        LocalAsrTarget::parse(LocalAsrRuntime::SherpaOnnx, "sense-voice-small-zh").unwrap();
+    install_fixture(&data_dir, &target);
+    backend
+        .services()
+        .local_asr
+        .set_active_model(target)
+        .await
+        .unwrap();
+    let local = backend
+        .create_channel(
+            ChannelKind::Asr,
+            "sherpa-onnx-local".into(),
+            "Local Sherpa".into(),
+        )
+        .await
+        .unwrap();
+    backend
+        .set_active_provider(ProviderSlot::Asr, local.clone())
+        .await
+        .unwrap();
+    backend
+        .set_channel_enabled(ChannelKind::Asr, local, false)
+        .await
+        .unwrap();
+
+    assert_eq!(backend.asr_route().await, AsrRoute::Unavailable);
+    backend.start().await.unwrap();
+    assert_eq!(
+        backend.start_dictation().await.unwrap_err().code,
+        BackendErrorCode::InvalidState
+    );
+    backend.shutdown().await.unwrap();
+    let _ = std::fs::remove_dir_all(data_dir);
+}
+
+#[tokio::test]
+async fn foundry_route_is_unavailable_when_restart_is_required() {
+    let (data_dir, runtime, backend) = local_asr_backend_with_credentials(
+        Arc::new(InMemoryCredentialStore::default()),
+        Some("foundry-local-whisper"),
+    );
+    backend
+        .services()
+        .local_asr
+        .set_active_model(
+            LocalAsrTarget::parse(LocalAsrRuntime::Foundry, "whisper-small").unwrap(),
+        )
+        .await
+        .unwrap();
+    let foundry = backend
+        .create_channel(
+            ChannelKind::Asr,
+            "foundry-local-whisper".into(),
+            "Foundry Local".into(),
+        )
+        .await
+        .unwrap();
+    backend
+        .set_active_provider(ProviderSlot::Asr, foundry)
+        .await
+        .unwrap();
+    runtime
+        .restart_needed
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+
+    assert_eq!(backend.asr_route().await, AsrRoute::Unavailable);
     let _ = std::fs::remove_dir_all(data_dir);
 }
 

@@ -2172,6 +2172,9 @@ export const ja: typeof zhCN = {
       localAsrTitle: 'ローカル ASR モデル',
       localAsrDesc: '転写をクラウドから本機推論に切り替えます。オフライン／プライバシー重視向け。',
       localAsrWarningShort: 'ローカル推論は遅く、スペック不足では欠字の可能性があります。',
+      localAsrFallbackLabel: 'クラウド認識に失敗したらローカルモデルを使う',
+      localAsrFallbackDesc:
+        '通信が不安定、またはオフラインのとき、クラウドの再試行を待たずにダウンロード済みのローカルモデルで録音を認識します。ローカルモデルのダウンロードが必要です。',
       qwen3Desc: '有効化すると ASR プロバイダーが引き継がれます。',
       sherpaDesc: '有効化すると ASR プロバイダーが引き継がれます。',
       foundryDesc: '有効化すると ASR プロバイダーが引き継がれます。',

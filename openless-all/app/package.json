@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:android:init": "tauri android init",
-    "tauri:android:dev": "tauri android dev",
+    "tauri:android:dev": "node scripts/run-android-tauri-dev.mjs",
     "tauri:android:build": "node scripts/run-android-tauri-build.mjs --debug",
     "tauri:android:build:debug": "node scripts/run-android-tauri-build.mjs --debug",
     "tauri:android:build:release": "node scripts/run-android-tauri-build.mjs --release",

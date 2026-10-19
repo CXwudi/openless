@@ -2244,6 +2244,9 @@ export const es: typeof zhCN = {
         'Sustituye el ASR en la nube por inferencia en el dispositivo. Para uso sin conexión o con datos sensibles.',
       localAsrWarningShort:
         'La inferencia local es más lenta; un equipo poco potente puede omitir palabras.',
+      localAsrFallbackLabel: 'Usar el modelo local si falla la nube',
+      localAsrFallbackDesc:
+        'Con conexión débil o sin conexión, transcribe la grabación con el modelo local descargado en lugar de esperar los reintentos en la nube. Requiere un modelo local descargado.',
       qwen3Desc: 'Al activarlo, sustituirá al proveedor ASR.',
       sherpaDesc: 'Al activarlo, sustituirá al proveedor ASR.',
       foundryDesc: 'Al activarlo, sustituirá al proveedor ASR.',

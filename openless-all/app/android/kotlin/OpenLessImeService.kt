@@ -333,6 +333,14 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
     // voiceButton/status below.
     private var backendLinkIndicator: View? = null
     private var backendLinkPulseAnimator: android.animation.ObjectAnimator? = null
+    // Which recognizer the next dictation uses, as nativeAsrRoute() reports
+    // it ("cloud", "local", "localRaw", "unavailable"). The idle dot shows
+    // local in dark green and pure-local raw output (no usable polish
+    // channel, or no network to reach it) in light white. Refreshed off the
+    // main thread by refreshAsrRoute().
+    private var asrRoute = "cloud"
+    private var networkAvailable = true
+    private val asrRouteRefreshing = java.util.concurrent.atomic.AtomicBoolean(false)
     // Updated only by the heartbeat check (see startBackendHeartbeat()),
     // not by the normal recording/processing/done states — those already
     // take priority in updateBackendLinkIndicator(). False means the most
@@ -3337,6 +3345,8 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
         // show. Keyboard settings write height/raise prefs while that cached
         // view is still the old footprint — rebuild when they diverge so the
         // next focus actually shows what the settings preview promised.
+        // A channel may have been turned off in settings since the last show.
+        if (isBackendReady()) refreshAsrRoute()
         val key = keyboardFootprintKey()
         if (appliedKeyboardFootprintKey != key) {
             appliedKeyboardFootprintKey = key
@@ -3546,6 +3556,8 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
         if (!ready) {
             OpenLessProcessRestartStats(this, "heartbeat").recordStart()
             ensureBackendReady()
+        } else {
+            refreshAsrRoute()
         }
     }
 
@@ -3570,12 +3582,50 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
             recording -> LINK_COLOR_RECORDING
             processing -> LINK_COLOR_PROCESSING
             !backendLinkHealthy -> LINK_COLOR_ISSUE
+            asrRoute == "localRaw" || (asrRoute == "local" && !networkAvailable) -> LINK_COLOR_READY_LOCAL_RAW
+            asrRoute == "local" -> LINK_COLOR_READY_LOCAL
+            asrRoute == "unavailable" -> LINK_COLOR_ISSUE
             else -> LINK_COLOR_READY
         }
-        (backendLinkIndicator?.background as? GradientDrawable)?.setColor(color)
+        (backendLinkIndicator?.background as? GradientDrawable)?.apply {
+            setColor(color)
+            // The light-white dot would vanish on the light keyboard without an edge.
+            if (color == LINK_COLOR_READY_LOCAL_RAW) setStroke(dp(1), Color.rgb(148, 163, 184)) else setStroke(0, Color.TRANSPARENT)
+        }
+        val ready = color == LINK_COLOR_READY || color == LINK_COLOR_READY_LOCAL || color == LINK_COLOR_READY_LOCAL_RAW
         backendLinkPulseAnimator?.duration =
-            if (color == LINK_COLOR_READY) BACKEND_LINK_READY_PULSE_DURATION_MS else BACKEND_LINK_PULSE_DURATION_MS
+            if (ready) BACKEND_LINK_READY_PULSE_DURATION_MS else BACKEND_LINK_PULSE_DURATION_MS
     }
+
+    /**
+     * Asks the backend whether the next dictation runs locally and repaints
+     * the dot. The call reads the credential store, so it runs on its own
+     * thread; overlapping requests (heartbeat plus a keyboard show) collapse
+     * into one.
+     */
+    private fun refreshAsrRoute() {
+        if (!asrRouteRefreshing.compareAndSet(false, true)) return
+        Thread {
+            val route = runCatching { OpenLessNative.nativeAsrRoute() }.getOrNull() ?: "unavailable"
+            val online = hasValidatedNetwork()
+            backendHeartbeatHandler.post {
+                asrRouteRefreshing.set(false)
+                if (route != asrRoute || online != networkAvailable) {
+                    asrRoute = route
+                    networkAvailable = online
+                    updateBackendLinkIndicator()
+                }
+            }
+        }.apply { name = "openless-asr-route" }.start()
+    }
+
+    /** Whether the active network reaches the internet — polish needs it; local recognition doesn't. */
+    private fun hasValidatedNetwork(): Boolean = runCatching {
+        val connectivity = getSystemService(android.net.ConnectivityManager::class.java) ?: return@runCatching true
+        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork) ?: return@runCatching false
+        capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }.getOrDefault(true)
 
     // Guards scheduleBackendReadyRecheck() so a second mic tap while a
     // recheck loop is already running doesn't stack a duplicate one.
@@ -6168,6 +6218,10 @@ class OpenLessImeService : InputMethodService(), OpenLessOverlayBridge.OverlaySt
         // (recording/processing), plus a light-green "ready" and an amber
         // "link issue" that overlay doesn't have.
         private val LINK_COLOR_READY = Color.rgb(134, 239, 172)
+        // Ready, and the next dictation runs on the local model (asrRoute).
+        private val LINK_COLOR_READY_LOCAL = Color.rgb(21, 128, 61)
+        // Ready, local model and raw output: no usable polish channel or no network.
+        private val LINK_COLOR_READY_LOCAL_RAW = Color.rgb(241, 245, 249)
         private val LINK_COLOR_RECORDING = Color.rgb(244, 63, 94)
         // Recording with rawModeArmed set (mic swipe-up: skip LLM polish on
         // stop) — distinct orange so glancing at the dot tells the two

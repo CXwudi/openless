@@ -2074,6 +2074,9 @@ export const zhTW: typeof zhCN = {
       localAsrTitle: '本地 ASR 模型',
       localAsrDesc: '把轉寫從雲端切到本機推理。僅推薦離線 / 隱私敏感場景。',
       localAsrWarningShort: '本地推理較慢，配置不足時可能吞字。',
+      localAsrFallbackLabel: '雲端辨識失敗時改用本機模型',
+      localAsrFallbackDesc:
+        '網路不佳或沒有網路時，用已下載的本機模型辨識錄音，不再等待雲端重試。需要先下載本機模型。',
       qwen3Desc: '啟動之後，ASR 提供商將被接管。',
       sherpaDesc: '啟用後，ASR 提供商將被接管。',
       foundryDesc: '啟動之後，ASR 提供商將被接管。',

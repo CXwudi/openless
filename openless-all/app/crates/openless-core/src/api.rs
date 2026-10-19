@@ -2305,6 +2305,29 @@ impl EngineProgressSink for BackendEngineProgress {
     }
 }
 
+/// Which kind of recognizer the next dictation uses — see OpenLessBackend::asr_route().
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AsrRoute {
+    Cloud,
+    Local,
+    /// Local recognition with no usable polish channel: the raw transcript
+    /// is the output (see capture_dictation_context_with_host).
+    LocalRaw,
+    /// No usable channel: the next dictation would fail to start.
+    Unavailable,
+}
+
+/// Which recognizer produced the dictations in history — see
+/// OpenLessBackend::asr_usage().
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AsrUsage {
+    pub local: u64,
+    pub cloud: u64,
+    /// Whether the latest dictation was recognized locally; None without history.
+    pub last_local: Option<bool>,
+}
+
 pub struct OpenLessBackend {
     config: BackendConfig,
     startup_error: Option<BackendError>,
@@ -4949,6 +4972,242 @@ impl OpenLessBackend {
         self.release_local_asr_provider(&previous.1).await
     }
 
+    /// Whether the selected channel is one of the shared cloud ASR providers.
+    /// Disabled channel errors also occur for local channels, which must not
+    /// silently switch to another local model.
+    async fn selected_asr_channel_is_shared_cloud(&self, preference_fallback: &str) -> bool {
+        let selected_id = match self
+            .deps
+            .credential_store
+            .active_provider(ProviderSlot::Asr)
+            .await
+        {
+            Ok(provider) if !provider.trim().is_empty() => provider,
+            _ => preference_fallback.to_string(),
+        };
+        let provider_type = match self
+            .deps
+            .credential_store
+            .list_channels(ChannelKind::Asr)
+            .await
+        {
+            Ok(channels) => channels
+                .into_iter()
+                .find(|channel| channel.id == selected_id)
+                .map(|channel| channel.provider_type)
+                .unwrap_or(selected_id),
+            Err(_) => selected_id,
+        };
+        crate::cloud_providers::SHARED_CLOUD_ASR_PROVIDER_TYPES.contains(&provider_type.as_str())
+    }
+
+    /// The local model dictation switches to when the selected cloud ASR
+    /// channel is turned off or unconfigured: only where local ASR runs, with a sherpa-onnx
+    /// model selected and its files installed — otherwise the disabled-channel
+    /// error stands. Model, language and keep-loaded time are filled in from
+    /// the same preferences a manual switch would use (DictationContext::capture).
+    fn local_asr_switch_target(
+        &self,
+        preferences: &crate::UserPreferences,
+    ) -> Option<crate::dictation_context::ProviderInvocation> {
+        if !crate::shared_types::PlatformCapabilities::current().supports_local_asr {
+            return None;
+        }
+        let target = crate::LocalAsrTarget::parse(
+            crate::LocalAsrRuntime::SherpaOnnx,
+            preferences.sherpa_onnx_model.trim(),
+        )
+        .ok()?;
+        let installed = self
+            .deps
+            .services
+            .model_store
+            .as_ref()?
+            .is_installed(&target)
+            .unwrap_or(false);
+        installed.then(|| {
+            crate::dictation_context::ProviderInvocation::for_provider(
+                crate::LocalAsrRuntime::SherpaOnnx.provider_id(),
+            )
+        })
+    }
+
+    async fn resolve_dictation_asr_provider(
+        &self,
+        preferences: &crate::UserPreferences,
+    ) -> Result<crate::dictation_context::ProviderInvocation, BackendError> {
+        let provider = match self
+            .resolve_session_provider(ProviderSlot::Asr, &preferences.active_asr_provider)
+            .await
+        {
+            Ok(provider) => provider,
+            Err(error)
+                if error.code == BackendErrorCode::InvalidState
+                    && self
+                        .selected_asr_channel_is_shared_cloud(&preferences.active_asr_provider)
+                        .await =>
+            {
+                return self.local_asr_switch_target(preferences).ok_or(error);
+            }
+            Err(error) => return Err(error),
+        };
+        if crate::cloud_providers::SHARED_CLOUD_ASR_PROVIDER_TYPES
+            .contains(&provider.provider_type.as_str())
+        {
+            if let Some(local) = self.local_asr_switch_target(preferences) {
+                if !crate::cloud_providers::asr_channel_configured(
+                    self.deps.credential_store.as_ref(),
+                    &provider,
+                )
+                .await?
+                {
+                    return Ok(local);
+                }
+            }
+        }
+        Ok(provider)
+    }
+
+    async fn selected_local_asr_model_is_installed(
+        &self,
+        runtime: crate::LocalAsrRuntime,
+        preferences: &crate::UserPreferences,
+    ) -> bool {
+        let model = match runtime {
+            crate::LocalAsrRuntime::Foundry => &preferences.foundry_local_asr_model,
+            crate::LocalAsrRuntime::SherpaOnnx => &preferences.sherpa_onnx_model,
+            crate::LocalAsrRuntime::Generic => return false,
+        };
+        let Ok(target) = crate::LocalAsrTarget::parse(runtime, model.trim()) else {
+            return false;
+        };
+        self.deps
+            .services
+            .local_asr
+            .list_models(runtime)
+            .await
+            .ok()
+            .is_some_and(|models| {
+                models
+                    .into_iter()
+                    .any(|entry| entry.target == target && entry.installed)
+            })
+    }
+
+    /// Which recognizer the next dictation will use, for hosts that show it
+    /// (the Android keyboard's status dot): the selected channel's own kind,
+    /// or Local when that channel is disabled or unconfigured and an installed
+    /// local model steps in.
+    pub async fn asr_route(&self) -> AsrRoute {
+        let preferences = self.get_preferences();
+        let local = match self.resolve_dictation_asr_provider(&preferences).await {
+            Ok(provider) => {
+                let Some(runtime) = Self::local_asr_runtime(&provider.provider_type) else {
+                    return AsrRoute::Cloud;
+                };
+                if !self.deps.services.local_asr.engine_available(runtime) {
+                    return AsrRoute::Unavailable;
+                }
+                if runtime == crate::LocalAsrRuntime::Foundry {
+                    // Foundry's engine is compiled in even when the selected
+                    // native model receipt is missing or a download/storage
+                    // operation requires a process restart. Do not advertise a
+                    // route that the next prepare call will reject.
+                    let status = match self
+                        .deps
+                        .services
+                        .local_asr
+                        .runtime_status(runtime)
+                        .await
+                    {
+                        Ok(status) => status,
+                        Err(_) => return AsrRoute::Unavailable,
+                    };
+                    if status.restart_required
+                        || !self
+                            .selected_local_asr_model_is_installed(runtime, &preferences)
+                            .await
+                    {
+                        return AsrRoute::Unavailable;
+                    }
+                }
+                // Sherpa is a real local route only when the selected model is
+                // installed on this ABI. The native engine otherwise rejects
+                // the dictation after the route has already been displayed.
+                if runtime == crate::LocalAsrRuntime::SherpaOnnx
+                    && self.local_asr_switch_target(&preferences).is_none()
+                {
+                    return AsrRoute::Unavailable;
+                }
+                true
+            }
+            Err(_) => return AsrRoute::Unavailable,
+        };
+        if !local {
+            return AsrRoute::Cloud;
+        }
+        // Same test the dictation context applies: a polish channel that is
+        // turned off or not configured means raw output.
+        let polish_usable = match self
+            .resolve_session_provider(ProviderSlot::Llm, &preferences.active_llm_provider)
+            .await
+        {
+            Ok(llm) => {
+                crate::cloud_providers::llm_channel_configured(
+                    self.deps.credential_store.as_ref(),
+                    &llm.provider_id,
+                    &llm.provider_type,
+                    llm.model.as_deref(),
+                )
+                .await
+            }
+            Err(_) => false,
+        };
+        if polish_usable {
+            AsrRoute::Local
+        } else {
+            AsrRoute::LocalRaw
+        }
+    }
+
+    /// How many dictations in history the local model and the cloud each
+    /// recognized, and which one the latest used. Counted from history, so it
+    /// survives restarts and follows the user's retention and deletions.
+    pub fn asr_usage(&self) -> Result<AsrUsage, BackendError> {
+        let mut usage = AsrUsage::default();
+        let mut latest: Option<(String, bool)> = None;
+        for entry in self.history.list()? {
+            // Recording drafts and terminal ASR failures retain the provider
+            // selected at start-up, but they never produced a recognition.
+            if matches!(
+                entry.error_code.as_deref(),
+                Some(
+                    "recording"
+                        | "cancelled"
+                        | "recordingFailed"
+                        | "transcribeFailed"
+                        | "emptyTranscript"
+                )
+            ) {
+                continue;
+            }
+            let Some(provider) = entry.asr_provider.as_deref() else {
+                continue;
+            };
+            let local = crate::dictation_context::is_local_asr_provider(provider);
+            if local {
+                usage.local += 1;
+            } else {
+                usage.cloud += 1;
+            }
+            if latest.as_ref().is_none_or(|(created_at, _)| entry.created_at > *created_at) {
+                latest = Some((entry.created_at, local));
+            }
+        }
+        usage.last_local = latest.map(|(_, local)| local);
+        Ok(usage)
+    }
+
     fn local_asr_runtime(provider: &str) -> Option<crate::LocalAsrRuntime> {
         match provider {
             "local-qwen3" | "local-qwen3-mlx" | "local-qwen3-c" | "local-whisper"
@@ -7401,8 +7660,7 @@ impl OpenLessBackend {
         );
         let traditional = pipeline_mode == crate::shared_types::PipelineMode::Traditional;
         let active_asr_provider = if traditional && purpose != DictationContextPurpose::QaText {
-            self.resolve_session_provider(ProviderSlot::Asr, &preferences.active_asr_provider)
-                .await?
+            self.resolve_dictation_asr_provider(&preferences).await?
         } else {
             crate::dictation_context::ProviderInvocation::for_provider(
                 &preferences.active_asr_provider,
@@ -7482,6 +7740,17 @@ impl OpenLessBackend {
                 context.llm.model.as_deref(),
             )
             .await
+        {
+            context = context.with_unconfigured_llm_raw();
+        }
+        // Pure local: recognition runs on this device and the polish channel
+        // is turned off too — output the raw transcript instead of refusing to
+        // start. The error is kept below for a later translation request.
+        if purpose == DictationContextPurpose::Dictation
+            && traditional
+            && deferred_llm_error.is_some()
+            && context.uses_llm_polisher()
+            && crate::dictation_context::is_local_asr_provider(&context.asr.provider_type)
         {
             context = context.with_unconfigured_llm_raw();
         }
@@ -9904,6 +10173,109 @@ mod tests {
             asr_ms: None,
             polish_ms: None,
         }
+    }
+
+    #[test]
+    fn asr_usage_counts_local_and_cloud_dictations_and_the_latest_kind() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "openless-core-backend-asr-usage-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let backend = backend_with_dictation_engine(data_dir.clone(), Arc::new(FakeEngine));
+        assert_eq!(backend.asr_usage().unwrap(), AsrUsage::default());
+
+        let entries = [
+            ("a", "2026-10-18T10:00:00+00:00", Some("volcengine")),
+            ("b", "2026-10-18T10:01:00+00:00", Some("sherpa-onnx-local")),
+            ("c", "2026-10-18T10:02:00+00:00", None),
+            ("d", "2026-10-18T10:03:00+00:00", Some("volcengine")),
+            ("e", "2026-10-18T10:04:00+00:00", Some("sherpa-onnx-local")),
+        ];
+        for (id, created_at, provider) in entries {
+            let mut entry = history_session(id);
+            entry.created_at = created_at.into();
+            entry.asr_provider = provider.map(Into::into);
+            backend.append_history(entry, 30, None).unwrap();
+        }
+
+        assert_eq!(
+            backend.asr_usage().unwrap(),
+            AsrUsage { local: 2, cloud: 2, last_local: Some(true) }
+        );
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn asr_usage_ignores_entries_without_a_successful_recognition() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "openless-core-backend-asr-usage-failures-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let backend = backend_with_dictation_engine(data_dir.clone(), Arc::new(FakeEngine));
+
+        let entries = [
+            (
+                "completed-local",
+                "2026-10-18T10:00:00+00:00",
+                "sherpa-onnx-local",
+                None,
+            ),
+            (
+                "recording-draft",
+                "2026-10-18T10:01:00+00:00",
+                "volcengine",
+                Some("recording"),
+            ),
+            (
+                "cancelled",
+                "2026-10-18T10:02:00+00:00",
+                "sherpa-onnx-local",
+                Some("cancelled"),
+            ),
+            (
+                "recording-failed",
+                "2026-10-18T10:03:00+00:00",
+                "volcengine",
+                Some("recordingFailed"),
+            ),
+            (
+                "transcribe-failed",
+                "2026-10-18T10:04:00+00:00",
+                "sherpa-onnx-local",
+                Some("transcribeFailed"),
+            ),
+            (
+                "empty-transcript",
+                "2026-10-18T10:05:00+00:00",
+                "volcengine",
+                Some("emptyTranscript"),
+            ),
+            (
+                "insert-failed-after-asr",
+                "2026-10-18T10:06:00+00:00",
+                "volcengine",
+                Some("insertFailed"),
+            ),
+            (
+                "polish-failed-after-asr",
+                "2026-10-18T10:07:00+00:00",
+                "sherpa-onnx-local",
+                Some("polishFailed"),
+            ),
+        ];
+        for (id, created_at, provider, error_code) in entries {
+            let mut entry = history_session(id);
+            entry.created_at = created_at.into();
+            entry.asr_provider = Some(provider.into());
+            entry.error_code = error_code.map(Into::into);
+            backend.append_history(entry, 30, None).unwrap();
+        }
+
+        assert_eq!(
+            backend.asr_usage().unwrap(),
+            AsrUsage { local: 2, cloud: 1, last_local: Some(true) }
+        );
+        let _ = std::fs::remove_dir_all(data_dir);
     }
 
     #[test]
@@ -13475,6 +13847,126 @@ mod tests {
         backend.shutdown().await.unwrap();
     }
 
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn unconfigured_cloud_capture_switches_only_with_an_installed_local_model() {
+        let data_dir = TestDataDir::new("unconfigured-cloud-local-switch");
+        let mut backend =
+            backend_with_dictation_engine(data_dir.path().to_path_buf(), Arc::new(FakeEngine));
+        backend.deps.services.model_store = Some(Arc::new(
+            crate::ModelStore::new(
+                crate::ModelStoreConfig::new(data_dir.path().join("models")).unwrap(),
+            )
+            .unwrap(),
+        ));
+        let channel = backend
+            .create_channel(ChannelKind::Asr, "whisper".into(), "Cloud ASR".into())
+            .await
+            .unwrap();
+        backend
+            .set_active_provider(ProviderSlot::Asr, channel.clone())
+            .await
+            .unwrap();
+        let options = DictationStartOptions::default();
+        let capture =
+            || backend.capture_dictation_context(&options, DictationContextPurpose::Dictation);
+        assert_eq!(capture().await.unwrap().asr.provider_type, "whisper");
+        let target = crate::LocalAsrTarget::parse(
+            crate::LocalAsrRuntime::SherpaOnnx,
+            "sense-voice-small-zh",
+        )
+        .unwrap();
+        let dir = backend
+            .deps
+            .services
+            .model_store
+            .as_ref()
+            .unwrap()
+            .model_dir(&target)
+            .unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        for (file, bytes) in [
+            (crate::MODEL_READY_SENTINEL, "ready"),
+            ("model.int8.onnx", "model"),
+            ("tokens.txt", "tokens"),
+        ] {
+            std::fs::write(dir.join(file), bytes).unwrap();
+        }
+        let local = capture().await.unwrap();
+        assert_eq!(local.asr.provider_type, "sherpa-onnx-local");
+        assert_eq!(local.asr.model.as_deref(), Some("sense-voice-small-zh"));
+        backend
+            .deps
+            .credential_store
+            .write(
+                crate::CredentialKey::new(
+                    crate::CredentialNamespace::Asr,
+                    Some(channel),
+                    "asr.api_key",
+                )
+                .unwrap(),
+                crate::SecretValue::new("fixture-key"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(capture().await.unwrap().asr.provider_type, "whisper");
+    }
+
+    #[tokio::test]
+    async fn local_recognition_with_a_disabled_llm_dictates_raw_text() {
+        let data_dir = TestDataDir::new("local-disabled-llm");
+        let polisher = Arc::new(crate::testing::FixtureTextPolisher::successful(
+            "must not run",
+        ));
+        let backend = backend_with_dictation_engine(
+            data_dir.path().to_path_buf(),
+            Arc::new(crate::PipelineDictationEngine::new(
+                Arc::new(crate::testing::FixtureAudioRecorder::new(
+                    vec![vec![1, 0]],
+                    Vec::new(),
+                )),
+                Arc::new(crate::testing::FixtureTranscriptionEngine::successful(
+                    "raw words",
+                    80,
+                )),
+                polisher.clone(),
+            )),
+        );
+        let llm = backend
+            .create_channel(
+                ChannelKind::Llm,
+                "ark".to_string(),
+                "Unused LLM".to_string(),
+            )
+            .await
+            .unwrap();
+        let mut preferences = backend.get_preferences();
+        preferences.active_llm_provider = llm.clone();
+        preferences.active_asr_provider = "sherpa-onnx-local".to_string();
+        backend.set_preferences(preferences).unwrap();
+        backend
+            .set_active_provider(ProviderSlot::Llm, llm.clone())
+            .await
+            .unwrap();
+        backend
+            .set_channel_enabled(ChannelKind::Llm, llm, false)
+            .await
+            .unwrap();
+        // A polishing style: with cloud ASR this start would be refused.
+        backend.activate_style_pack("builtin.light").unwrap();
+        backend.start().await.unwrap();
+
+        backend
+            .start_dictation()
+            .await
+            .expect("local recognition dictates raw text without a polish channel");
+        let result = backend.stop_dictation().await.unwrap();
+
+        assert_eq!(result.polished_text, "raw words");
+        assert!(polisher.inputs().is_empty());
+        backend.shutdown().await.unwrap();
+    }
+
     #[tokio::test]
     async fn raw_dictation_remains_usable_when_the_last_llm_channel_is_disabled() {
         let data_dir = TestDataDir::new("raw-disabled-llm");
@@ -13505,6 +13997,9 @@ mod tests {
             .unwrap();
         let mut preferences = backend.get_preferences();
         preferences.active_llm_provider = llm.clone();
+        // Cloud ASR: with local recognition a disabled LLM means raw output
+        // instead (local_recognition_with_a_disabled_llm_dictates_raw_text).
+        preferences.active_asr_provider = "volcengine".to_string();
         preferences.working_languages = vec!["简体中文".to_string()];
         preferences.translation_target_language = "English".to_string();
         backend.set_preferences(preferences).unwrap();

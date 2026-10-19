@@ -2263,6 +2263,9 @@ export const de: typeof zhCN = {
         'Verlagert die Transkription von Cloud-ASR auf das Gerät. Für Offline-Nutzung oder sensible Daten.',
       localAsrWarningShort:
         'Lokale Inferenz ist langsamer. Zu schwache Hardware kann Wörter verlieren.',
+      localAsrFallbackLabel: 'Bei Cloud-Fehler lokales Modell verwenden',
+      localAsrFallbackDesc:
+        'Bei schwacher oder fehlender Verbindung wird die Aufnahme mit dem heruntergeladenen lokalen Modell erkannt, statt auf Cloud-Wiederholungen zu warten. Erfordert ein heruntergeladenes lokales Modell.',
       qwen3Desc: 'Nach der Aktivierung übernimmt dieses Modell die Spracherkennung.',
       sherpaDesc: 'Nach der Aktivierung übernimmt dieses Modell die Spracherkennung.',
       foundryDesc: 'Nach der Aktivierung übernimmt dieses Modell die Spracherkennung.',

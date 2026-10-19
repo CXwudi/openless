@@ -119,6 +119,7 @@ export let mockSettings: UserPreferences = {
   sherpaOnnxModel: 'sense-voice-small-zh',
   sherpaOnnxLanguageHint: '',
   sherpaOnnxKeepLoadedSecs: 300,
+  localAsrFallbackEnabled: false,
   historyRetentionDays: 7,
   polishContextWindowMinutes: 5,
   polishSkipMaxChars: 0,

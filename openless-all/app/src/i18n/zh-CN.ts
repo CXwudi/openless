@@ -2073,6 +2073,9 @@ export const zhCN = {
       localAsrTitle: '本地 ASR 模型',
       localAsrDesc: '把转写从云端切到本机推理。仅推荐离线 / 隐私敏感场景。',
       localAsrWarningShort: '本地推理较慢，配置不足时可能吞字。',
+      localAsrFallbackLabel: '云端识别失败时用本地模型',
+      localAsrFallbackDesc:
+        '网络不好或没网时，用已下载的本地模型识别录音，不再等云端重试。需要先下载本地模型。',
       qwen3Desc: '启动之后，ASR 提供商将被接管。',
       sherpaDesc: '启动之后，ASR 提供商将被接管。',
       foundryDesc: '启动之后，ASR 提供商将被接管。',

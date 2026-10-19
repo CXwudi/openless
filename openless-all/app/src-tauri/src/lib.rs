@@ -523,7 +523,8 @@ macro_rules! app_invoke_handler_desktop {
     };
 }
 
-/// Android/iOS: only commands usable without desktop hotkeys, tray, updater, or local ASR.
+/// Android/iOS: only commands usable without desktop hotkeys, tray or updater;
+/// local ASR commands only where sherpa-onnx is linked (arm64 Android).
 #[macro_export]
 macro_rules! app_invoke_handler_mobile {
     () => {
@@ -681,6 +682,77 @@ macro_rules! app_invoke_handler_mobile {
             $crate::restart_app,
             $crate::reset_accessibility_permission_and_restart_app,
             $crate::log_client_error,
+            // Local ASR: arm64 Android links sherpa-onnx (build.rs `local_asr_sherpa`).
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_get_settings,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_storage_settings,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_set_models_base_dir,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_activate,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_set_active_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_set_mirror,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_list_models,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_fetch_remote_info,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_fetch_hf_card,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_download_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_cancel_download,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_delete_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_cleanup_incomplete,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_model_dir,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_reveal_model_dir,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_reveal_models_root,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_test_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_test_channel,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_engine_status,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_release_engine,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_preload,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_set_keep_loaded_secs,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_status,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_catalog,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_fetch_remote_info,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_download_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_cancel_download,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_set_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_set_language_hint,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_prepare,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_cancel_prepare,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_release,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_model_dir,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_delete_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_reveal_model_dir,
         ]
     };
 }

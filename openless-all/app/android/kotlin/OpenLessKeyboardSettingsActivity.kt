@@ -578,6 +578,21 @@ class OpenLessKeyboardSettingsActivity : Activity() {
             },
         )
 
+        // "语音识别来源": how many dictations in history the cloud and the local
+        // model each recognized (with the local standby racing the cloud
+        // either can win), the latest one's kind highlighted.
+        content.addView(sectionLabel(ui("语音识别来源", "Speech recognition source")))
+        val asrUsageText = TextView(this).apply {
+            text = ui("读取中…", "Loading…")
+            textSize = 14f
+            setTextColor(tone(Color.rgb(220, 220, 220), Color.rgb(50, 50, 55)))
+        }
+        content.addView(asrUsageText)
+        Thread {
+            val usage = runCatching { OpenLessNative.nativeAsrUsage() }.getOrNull()
+            runOnUiThread { asrUsageText.text = asrUsageSummary(usage) }
+        }.apply { name = "openless-asr-usage" }.start()
+
         // build_first_seen_wall_time is written by OpenLessApplication's
         // resetRestartStatsOnVersionBump() at the exact moment it last
         // zeroed the restart-cause counters below — i.e. "counting since
@@ -742,6 +757,25 @@ class OpenLessKeyboardSettingsActivity : Activity() {
                 vibrator.vibrate(durationMs.toLong())
             }
         }
+    }
+
+    /** "云 N · 本 M" from nativeAsrUsage()'s "<local>,<cloud>,<latest>", the latest kind bold and colored. */
+    private fun asrUsageSummary(usage: String?): CharSequence {
+        val parts = usage?.split(',') ?: return ui("后台服务未就绪", "Backend not ready")
+        val local = parts.getOrNull(0)?.toIntOrNull() ?: 0
+        val cloud = parts.getOrNull(1)?.toIntOrNull() ?: 0
+        if (local + cloud == 0) return ui("暂无听写记录", "No dictations yet")
+        val cloudText = ui("云 $cloud", "Cloud $cloud")
+        val localText = ui("本 $local", "Local $local")
+        val text = android.text.SpannableString("$cloudText · $localText")
+        val (start, end, color) = when (parts.getOrNull(2)) {
+            "cloud" -> Triple(0, cloudText.length, tone(Color.rgb(96, 165, 250), Color.rgb(37, 99, 235)))
+            "local" -> Triple(text.length - localText.length, text.length, tone(Color.rgb(74, 222, 128), Color.rgb(21, 128, 61)))
+            else -> return text
+        }
+        text.setSpan(android.text.style.ForegroundColorSpan(color), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        text.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        return text
     }
 
     private fun sectionLabel(text: String): View = TextView(this).apply {

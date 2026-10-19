@@ -563,6 +563,10 @@ fn restore_activation_preferences(
 }
 
 impl LocalAsrApi for LocalAsrService {
+    fn engine_available(&self, runtime: LocalAsrRuntime) -> bool {
+        self.runtime.engine_available(runtime)
+    }
+
     fn activate(
         &self,
         request: LocalAsrActivationRequest,
@@ -1239,15 +1243,25 @@ impl LocalAsrApi for LocalAsrService {
                     )
                 })?;
             let provider_type = channel.provider_type;
-            let model_id = {
+            let (target_runtime, model_id) = {
                 let preferences = preferences.get();
                 match provider_type.as_str() {
-                    "local-whisper" | "apple-whisper" => {
-                        preferences.local_whisper_active_model.clone()
-                    }
-                    "local-qwen3" | "local-qwen3-mlx" | "local-qwen3-c" => {
-                        preferences.local_asr_active_model.clone()
-                    }
+                    "local-whisper" | "apple-whisper" => (
+                        LocalAsrRuntime::Generic,
+                        preferences.local_whisper_active_model.clone(),
+                    ),
+                    "local-qwen3" | "local-qwen3-mlx" | "local-qwen3-c" => (
+                        LocalAsrRuntime::Generic,
+                        preferences.local_asr_active_model.clone(),
+                    ),
+                    "foundry-local" | "foundry-whisper" | "foundry-local-whisper" => (
+                        LocalAsrRuntime::Foundry,
+                        preferences.foundry_local_asr_model.clone(),
+                    ),
+                    "sherpa-onnx" | "sherpa-onnx-local" => (
+                        LocalAsrRuntime::SherpaOnnx,
+                        preferences.sherpa_onnx_model.clone(),
+                    ),
                     _ => {
                         return Err(BackendError::new(
                             BackendErrorCode::Unsupported,
@@ -1262,7 +1276,7 @@ impl LocalAsrApi for LocalAsrService {
                     "local ASR model is not configured",
                 ));
             }
-            let target = LocalAsrTarget::parse(LocalAsrRuntime::Generic, model_id)?;
+            let target = LocalAsrTarget::parse(target_runtime, model_id)?;
             if !runtime.supports_model(&target) {
                 return Err(BackendError::new(BackendErrorCode::Unsupported, "This local ASR engine is retired or unavailable"));
             }

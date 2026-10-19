@@ -699,6 +699,11 @@ pub struct UserPreferences {
     /// (seconds); same semantics as foundry/qwen3.
     #[serde(default = "default_local_asr_keep_loaded_secs")]
     pub sherpa_onnx_keep_loaded_secs: u32,
+    /// When a cloud ASR provider fails, transcribe the recorded audio with the
+    /// selected sherpa-onnx model instead (weak or no network). Off by default;
+    /// only takes effect where local ASR is supported and a model is installed.
+    #[serde(default)]
+    pub local_asr_fallback_enabled: bool,
     /// Auto-update channel. stable = background auto-update checks the
     /// stable manifest; beta = the beta manifest. Manual check buttons pass
     /// the channel explicitly, decoupled from this pref.
@@ -1119,6 +1124,8 @@ struct UserPreferencesWire {
     #[serde(default = "default_local_asr_keep_loaded_secs")]
     sherpa_onnx_keep_loaded_secs: u32,
     #[serde(default)]
+    local_asr_fallback_enabled: bool,
+    #[serde(default)]
     update_channel: UpdateChannel,
     #[serde(default)]
     update_channel_explicit: Option<bool>,
@@ -1316,6 +1323,7 @@ impl Default for UserPreferencesWire {
             sherpa_onnx_model: prefs.sherpa_onnx_model,
             sherpa_onnx_language_hint: prefs.sherpa_onnx_language_hint,
             sherpa_onnx_keep_loaded_secs: prefs.sherpa_onnx_keep_loaded_secs,
+            local_asr_fallback_enabled: prefs.local_asr_fallback_enabled,
             update_channel: prefs.update_channel,
             // None preserves the fact that the old config lacked the marker; deserialization treats only historical Beta as explicit.
             update_channel_explicit: None,
@@ -1539,6 +1547,7 @@ impl<'de> Deserialize<'de> for UserPreferences {
             sherpa_onnx_model: wire.sherpa_onnx_model,
             sherpa_onnx_language_hint: wire.sherpa_onnx_language_hint,
             sherpa_onnx_keep_loaded_secs: wire.sherpa_onnx_keep_loaded_secs,
+            local_asr_fallback_enabled: wire.local_asr_fallback_enabled,
             update_channel: wire.update_channel,
             update_channel_explicit,
             history_retention_days: wire.history_retention_days,
@@ -1905,6 +1914,7 @@ impl Default for UserPreferences {
             sherpa_onnx_model: default_sherpa_onnx_model(),
             sherpa_onnx_language_hint: String::new(),
             sherpa_onnx_keep_loaded_secs: default_local_asr_keep_loaded_secs(),
+            local_asr_fallback_enabled: false,
             update_channel: UpdateChannel::default(),
             update_channel_explicit: false,
             history_retention_days: default_history_retention_days(),
@@ -2513,7 +2523,8 @@ impl PlatformCapabilities {
                 supports_overlay: true,
                 supports_desktop_hotkey: false,
                 supports_tray: false,
-                supports_local_asr: false,
+                // The app links sherpa-onnx on arm64 only; other ABIs stay cloud-only.
+                supports_local_asr: cfg!(target_arch = "aarch64"),
                 supports_local_qwen3_mlx: false,
                 supports_in_app_dictation: true,
                 supports_auto_update: true,
@@ -2548,8 +2559,9 @@ impl PlatformCapabilities {
                 supports_overlay: true,
                 supports_desktop_hotkey: true,
                 supports_tray: true,
-                // Legacy manager is retired on macOS; experiments use their own entry.
-                supports_local_asr: cfg!(any(target_os = "linux", target_os = "windows")),
+                // The Tauri native local engine is available on Windows; Linux keeps the
+                // retired generic provider metadata but has no inference runtime.
+                supports_local_asr: cfg!(target_os = "windows"),
                 supports_local_qwen3_mlx: false,
                 supports_in_app_dictation: false,
                 supports_auto_update: true,

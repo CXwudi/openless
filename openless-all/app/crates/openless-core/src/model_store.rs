@@ -2485,6 +2485,9 @@ fn write_relocation_journal(root: &Path, source: &Path) -> Result<(), BackendErr
 }
 
 fn commit_staging(staging: &Path, destination: &Path) -> Result<(), BackendError> {
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent).map_err(platform_error)?;
+    }
     let backup = destination.with_file_name(format!(
         ".{}.previous-{}",
         destination
@@ -3460,6 +3463,42 @@ mod tests {
             body
         );
         assert_eq!(calls.load(Ordering::Relaxed), 2);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn sherpa_download_creates_runtime_parent_before_commit() {
+        let root =
+            std::env::temp_dir().join(format!("openless-sherpa-model-store-{}", uuid::Uuid::new_v4()));
+        let body = b"0123456789".to_vec();
+        let transport = Arc::new(FakeTransport {
+            calls: Arc::new(AtomicUsize::new(0)),
+            body: body.clone(),
+            ignore_range: false,
+        });
+        let mut config = ModelStoreConfig::new(root.clone()).unwrap();
+        config.chunk_size_bytes = 4;
+        let store = ModelStore::with_transport(config, transport);
+        let target =
+            LocalAsrTarget::parse(LocalAsrRuntime::SherpaOnnx, "sense-voice-small-zh").unwrap();
+        let manifest = ModelManifest::new(
+            target,
+            "org/demo",
+            vec![ModelFile {
+                path: "weights.bin".into(),
+                url: "https://example.test/weights.bin".into(),
+                size_bytes: body.len() as u64,
+                sha256: Some(format!("{:x}", Sha256::digest(&body))),
+            }],
+        )
+        .unwrap();
+
+        let result = store.download(manifest).await;
+
+        assert!(result.is_ok(), "Sherpa model download failed: {result:?}");
+        assert!(root
+            .join("sherpa-onnx/sense-voice-small-zh/weights.bin")
+            .is_file());
         let _ = std::fs::remove_dir_all(root);
     }
 

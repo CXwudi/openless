@@ -2273,6 +2273,9 @@ export const fr: typeof zhCN = {
         'Remplace l’ASR dans le cloud par l’inférence sur l’appareil. Pour l’usage hors ligne ou les données sensibles.',
       localAsrWarningShort:
         'L’inférence locale est plus lente ; un appareil insuffisamment puissant peut omettre des mots.',
+      localAsrFallbackLabel: 'Utiliser le modèle local si le cloud échoue',
+      localAsrFallbackDesc:
+        'En cas de connexion faible ou absente, transcrit l\'enregistrement avec le modèle local téléchargé au lieu d\'attendre les nouvelles tentatives du cloud. Nécessite un modèle local téléchargé.',
       qwen3Desc: 'Une fois activé, il remplace le fournisseur ASR.',
       sherpaDesc: 'Une fois activé, il remplace le fournisseur ASR.',
       foundryDesc: 'Une fois activé, il remplace le fournisseur ASR.',

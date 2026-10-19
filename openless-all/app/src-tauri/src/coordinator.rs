@@ -684,6 +684,14 @@ impl Coordinator {
             );
 
             let app = crate::core_adapters::app_handle_slot();
+            // arm64 Android links sherpa-onnx (build.rs `local_asr_sherpa`) and
+            // gets the same runtime pair Windows builds in new_with_local_runtimes().
+            #[cfg(local_asr_sherpa)]
+            let native_asr = crate::core_adapters::TauriNativeAsrDependencies::new(
+                Arc::new(crate::asr::local::FoundryLocalRuntime::new()),
+                Arc::new(crate::asr::local::SherpaOnnxRuntime::new()),
+            );
+            #[cfg(not(local_asr_sherpa))]
             let native_asr = crate::core_adapters::TauriNativeAsrDependencies::new();
             let hotkey_status = Arc::new(Mutex::new(HotkeyStatus::default()));
             let qa_context = Arc::new(TauriQaHostContext::default());
