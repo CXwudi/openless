@@ -35,6 +35,7 @@ import { AboutSection } from './AboutSection';
 import { getPlatformCapabilities, getCachedPlatformCapabilities } from '../../lib/platform';
 import { listChannels } from '../../lib/ipc';
 import type { PlatformCapabilities } from '../../lib/types';
+import { type OS } from '../../components/WindowChrome';
 import { useHotkeySettings } from '../../state/HotkeySettingsContext';
 import { emitSaved } from '../../lib/savedEvent';
 import { SettingRow, Toggle, ExperimentalSectionTitle, segmentedTrackStyle } from './shared';
@@ -62,13 +63,13 @@ function usePlatformCaps(): PlatformCapabilities | null {
 }
 
 // Recording & input: from recording to text insertion, plus phone input.
-export function GeneralTab() {
+export function GeneralTab({ os }: { os?: OS } = {}) {
   const platformCaps = usePlatformCaps();
   const showRemoteInput = platformCaps?.platform === 'desktop';
 
   return (
     <>
-      <RecordingInputSection />
+      <RecordingInputSection forcedOs={os} />
       <SelectionWorkspaceSection showShortcut={false} />
       {showRemoteInput && <RemoteInputSection />}
     </>

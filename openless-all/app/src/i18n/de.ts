@@ -1521,10 +1521,16 @@ export const de: typeof zhCN = {
       capsuleTranscriptDesc:
         'Erkannten Originaltext statt Audiobalken anzeigen. Ohne Streaming erscheint der Text nach der Erkennung. Deaktivieren stellt die bisherige Anzeige wieder her.',
       capsuleTranscriptFontSize: 'Transkript-Schriftgröße',
-      capsuleDisplayModeLabel: "Kapsel auf mehreren Bildschirmen",
-      capsuleDisplayModeDesc: "Wähle die Bildschirme für die Aufnahmekapsel. Alle Bildschirme benötigen zusätzliche Fenster und Grafikressourcen.",
-      capsuleDisplayCursorScreen: "Bildschirm unter dem Mauszeiger",
-      capsuleDisplayAllScreens: "Auf allen Bildschirmen anzeigen",
+      capsuleDisplayModeLabel: 'Kapsel auf mehreren Bildschirmen',
+      capsuleDisplayModeDesc:
+        'Wähle die Bildschirme für die Aufnahmekapsel. Alle Bildschirme benötigen zusätzliche Fenster und Grafikressourcen.',
+      capsuleDisplayCursorScreen: 'Bildschirm unter dem Mauszeiger',
+      capsuleDisplayPrimaryScreen: 'Nur Hauptbildschirm',
+      capsuleDisplayForegroundWindowScreen: 'Bildschirm des Vordergrundfensters',
+      capsuleDisplayAllScreens: 'Auf allen Bildschirmen anzeigen',
+      capsuleDisplayModeRestartTitle: 'OpenLess neu starten, um den Anzeigemodus anzuwenden',
+      capsuleDisplayModeRestartDesc:
+        'Der Wechsel vom Modus für alle Bildschirme erfordert einen Neustart, um die bisherigen Kapselfenster zu schließen. Jetzt neu starten?',
       capsuleStyleLabel: 'Kapselstil',
       capsuleStyleSiri: 'Schimmernder Siri-Stil',
       capsuleStyleClassic: 'OpenLess-Standardstil',

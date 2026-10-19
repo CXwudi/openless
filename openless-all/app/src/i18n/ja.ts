@@ -1480,10 +1480,16 @@ export const ja: typeof zhCN = {
       capsuleTranscriptDesc:
         '音声バーの代わりに認識した原文を表示します。オフにすると元の表示に戻ります。非ストリーミング認識は結果の受信後に表示します。',
       capsuleTranscriptFontSize: '文字起こしの文字サイズ',
-      capsuleDisplayModeLabel: "複数画面のカプセル",
-      capsuleDisplayModeDesc: "録音カプセルを表示する画面を選択します。すべての画面ではウィンドウと描画リソースの使用量が増えます。",
-      capsuleDisplayCursorScreen: "マウスポインターのある画面",
-      capsuleDisplayAllScreens: "すべての画面に表示",
+      capsuleDisplayModeLabel: '複数画面のカプセル',
+      capsuleDisplayModeDesc:
+        '録音カプセルを表示する画面を選択します。すべての画面ではウィンドウと描画リソースの使用量が増えます。',
+      capsuleDisplayCursorScreen: 'マウスポインターのある画面',
+      capsuleDisplayPrimaryScreen: 'メインディスプレイのみ',
+      capsuleDisplayForegroundWindowScreen: '前面ウィンドウのある画面',
+      capsuleDisplayAllScreens: 'すべての画面に表示',
+      capsuleDisplayModeRestartTitle: '表示モードを適用するには OpenLess を再起動してください',
+      capsuleDisplayModeRestartDesc:
+        'すべての画面表示から切り替えるには、以前のカプセルウィンドウを閉じるため再起動が必要です。今すぐ再起動しますか？',
       capsuleStyleLabel: 'カプセルスタイル',
       capsuleStyleSiri: '光条 Siri スタイル',
       capsuleStyleClassic: 'Openless デフォルトスタイル',

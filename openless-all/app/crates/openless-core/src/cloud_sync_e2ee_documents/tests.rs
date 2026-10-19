@@ -325,6 +325,133 @@ fn unknown_preference_values_roundtrip_and_merge_without_application() {
 }
 
 #[test]
+fn capsule_display_exports_new_modes_with_a_v1_compatible_shadow() {
+    for mode in ["primaryScreen", "foregroundWindowScreen"] {
+        let mut data = snapshot();
+        data.preferences = SecretJson::new(json!({"capsuleDisplayMode": mode}));
+        let exported = export_snapshot(data).unwrap();
+        let value = |id: &str| {
+            exported
+                .documents
+                .documents()
+                .documents
+                .iter()
+                .find(|doc| doc.kind == DocumentKind::Preferences && doc.id == id)
+                .map(|doc| doc.value.clone())
+        };
+        assert_eq!(value("capsuleDisplayMode"), Some(json!("cursorScreen")));
+        assert_eq!(value("capsuleDisplayModeV2"), Some(json!(mode)));
+    }
+}
+
+#[test]
+fn capsule_display_v2_survives_retention_upgrade_and_explicit_replacement() {
+    let retained = LogicalDocument {
+        id: "capsuleDisplayModeV2".into(),
+        kind: DocumentKind::Preferences,
+        schema_version: 1,
+        value: json!("foregroundWindowScreen"),
+    };
+    for explicit in [None, Some("cursorScreen"), Some("allScreens")] {
+        let mut data = snapshot();
+        data.preferences = SecretJson::new(json!({"capsuleDisplayMode":"cursorScreen"}));
+        if let Some(mode) = explicit {
+            data.preferences.expose_mut()["capsuleDisplayModeV2"] = json!(mode);
+        }
+        data.retained_documents.push(retained.clone());
+        let exported = export_snapshot(data).unwrap();
+        let modes: Vec<_> = exported
+            .documents
+            .documents()
+            .documents
+            .iter()
+            .filter(|doc| doc.id == "capsuleDisplayModeV2")
+            .collect();
+        assert_eq!(modes.len(), 1);
+        assert_eq!(
+            modes[0].value,
+            json!(explicit.unwrap_or("foregroundWindowScreen"))
+        );
+    }
+}
+
+#[test]
+fn capsule_display_legacy_edits_are_not_v2_conflicts() {
+    for mode in [
+        "cursorScreen",
+        "primaryScreen",
+        "foregroundWindowScreen",
+        "allScreens",
+    ] {
+        let mut data = snapshot();
+        data.preferences = SecretJson::new(json!({
+            "themeMode":"system", "capsuleDisplayMode":"cursorScreen", "capsuleDisplayModeV2":mode
+        }));
+        let base = export_snapshot(data).unwrap().documents;
+        let local = change(
+            &base,
+            DocumentKind::Preferences,
+            "capsuleDisplayMode",
+            json!(if mode == "allScreens" {
+                "cursorScreen"
+            } else {
+                "allScreens"
+            }),
+        );
+        let remote = change(&base, DocumentKind::Preferences, "themeMode", json!("dark"));
+        let merged = diff_sync_documents(Some(&base), &local, &remote)
+            .unwrap()
+            .resolve(&[])
+            .unwrap();
+        let mirrored = diff_sync_documents(Some(&base), &remote, &local)
+            .unwrap()
+            .resolve(&[])
+            .unwrap();
+        assert_eq!(merged.documents(), mirrored.documents());
+        assert!(merged
+            .documents()
+            .documents
+            .iter()
+            .any(|doc| doc.id == "capsuleDisplayModeV2" && doc.value == json!(mode)));
+        assert!(merged
+            .documents()
+            .documents
+            .iter()
+            .any(|doc| doc.id == "themeMode" && doc.value == json!("dark")));
+    }
+}
+
+#[test]
+fn capsule_display_v2_rejects_invalid_and_duplicate_documents() {
+    let base = sample();
+    for value in [json!("sometimes"), Value::Null, json!(42)] {
+        let mut set = base.documents().clone();
+        set.documents.push(LogicalDocument {
+            id: "capsuleDisplayModeV2".into(),
+            kind: DocumentKind::Preferences,
+            schema_version: 1,
+            value,
+        });
+        assert_eq!(
+            validate_sync_documents(set, Revision::new(4)).unwrap_err(),
+            DocumentError::InvalidDocument
+        );
+    }
+    let mut set = base.documents().clone();
+    let doc = LogicalDocument {
+        id: "capsuleDisplayModeV2".into(),
+        kind: DocumentKind::Preferences,
+        schema_version: 1,
+        value: json!("cursorScreen"),
+    };
+    set.documents.extend([doc.clone(), doc]);
+    assert_eq!(
+        validate_sync_documents(set, Revision::new(4)).unwrap_err(),
+        DocumentError::DuplicateId
+    );
+}
+
+#[test]
 fn independent_stable_ids_merge_but_simultaneous_same_key_changes_do_not() {
     let base = sample();
     let local = change(

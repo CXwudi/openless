@@ -701,7 +701,10 @@ impl Coordinator {
                 startup_error,
             );
 
-            let host = crate::tauri_coordinator_host::TauriCoordinatorHost::new(Arc::clone(&app));
+            let host = crate::tauri_coordinator_host::TauriCoordinatorHost::new(
+                Arc::clone(&app),
+                Arc::clone(&qa_context),
+            );
             let hotkey_runtime_target = (&backend.get_preferences()).into();
             let inner = Arc::new(Inner {
                 host,
@@ -834,7 +837,10 @@ impl Coordinator {
             startup_error,
         );
 
-        let host = crate::tauri_coordinator_host::TauriCoordinatorHost::new(Arc::clone(&app));
+        let host = crate::tauri_coordinator_host::TauriCoordinatorHost::new(
+            Arc::clone(&app),
+            Arc::clone(&qa_context),
+        );
         let hotkey_runtime_target = (&backend.get_preferences()).into();
         let inner = Arc::new(Inner {
             host,

@@ -422,6 +422,151 @@ async fn disabled_fresh_start_never_requests_local_key() {
 }
 
 #[tokio::test]
+async fn capsule_display_native_restore_keeps_v2_through_legacy_edits_and_missing_fields() {
+    for mode in [
+        "cursorScreen",
+        "primaryScreen",
+        "foregroundWindowScreen",
+        "allScreens",
+    ] {
+        let fixture = Fixture::new();
+        let before = fixture
+            .store
+            .export_scope(fixture.scope.clone())
+            .await
+            .unwrap();
+        let mut desired = before.documents.documents().clone();
+        set_doc(
+            &mut desired,
+            DocumentKind::Preferences,
+            "capsuleDisplayModeV2",
+            json!(mode),
+        );
+        set_doc(
+            &mut desired,
+            DocumentKind::Preferences,
+            "capsuleDisplayMode",
+            json!("allScreens"),
+        );
+        fixture
+            .store
+            .restore_scope(validate(desired), fixture.context(&before))
+            .await
+            .unwrap();
+        let prefs = fixture.repo.preferences.get();
+        assert_eq!(
+            serde_json::to_value(&prefs).unwrap()["capsuleDisplayMode"],
+            mode
+        );
+        assert_eq!(
+            prefs.capsule_display_mode_v2,
+            Some(prefs.capsule_display_mode)
+        );
+
+        let persisted: Value = serde_json::from_slice(
+            &std::fs::read(fixture._temp.0.join("preferences.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(persisted["capsuleDisplayMode"], mode);
+        assert_eq!(persisted["capsuleDisplayModeV2"], mode);
+
+        let before = fixture
+            .store
+            .export_scope(fixture.scope.clone())
+            .await
+            .unwrap();
+        let mut legacy = before.documents.documents().clone();
+        legacy
+            .documents
+            .retain(|doc| doc.id != "capsuleDisplayModeV2");
+        set_doc(
+            &mut legacy,
+            DocumentKind::Preferences,
+            "capsuleDisplayMode",
+            json!("cursorScreen"),
+        );
+        fixture
+            .store
+            .restore_scope(validate(legacy), fixture.context(&before))
+            .await
+            .unwrap();
+        let prefs = fixture.repo.preferences.get();
+        assert_eq!(
+            serde_json::to_value(&prefs).unwrap()["capsuleDisplayMode"],
+            mode
+        );
+        assert_eq!(
+            prefs.capsule_display_mode_v2,
+            Some(prefs.capsule_display_mode)
+        );
+    }
+}
+
+#[tokio::test]
+async fn capsule_display_upgrade_does_not_overwrite_an_older_clients_retained_v2() {
+    let fixture = Fixture::new();
+    let mut state = state::ScopeState::empty(&fixture.scope).unwrap();
+    state.retained_documents.push(LogicalDocument {
+        id: "capsuleDisplayModeV2".into(),
+        kind: DocumentKind::Preferences,
+        schema_version: 1,
+        value: json!("primaryScreen"),
+    });
+    fixture
+        .extensions
+        .write_scope(fixture.scope.clone(), state.secret_json().unwrap())
+        .await
+        .unwrap();
+    let exported = fixture
+        .store
+        .export_scope(fixture.scope.clone())
+        .await
+        .unwrap();
+    assert!(fixture
+        .repo
+        .preferences
+        .get()
+        .capsule_display_mode_v2
+        .is_none());
+    assert!(exported
+        .documents
+        .documents()
+        .documents
+        .iter()
+        .any(|doc| doc.id == "capsuleDisplayModeV2" && doc.value == json!("primaryScreen")));
+    fixture
+        .store
+        .restore_scope(
+            validate(exported.documents.documents().clone()),
+            fixture.context(&exported),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        fixture.repo.preferences.get().capsule_display_mode,
+        crate::CapsuleDisplayMode::PrimaryScreen
+    );
+
+    let next = crate::preference_patch::patch_preferences(
+        &fixture.repo.preferences.get(),
+        &BTreeMap::from([("/capsuleDisplayMode".into(), json!("cursorScreen"))]),
+    )
+    .unwrap();
+    fixture.repo.preferences.set(next).unwrap();
+    let exported = fixture
+        .store
+        .export_scope(fixture.scope.clone())
+        .await
+        .unwrap();
+    assert!(exported
+        .documents
+        .documents()
+        .documents
+        .iter()
+        .any(|doc| doc.id == "capsuleDisplayModeV2" && doc.value == json!("cursorScreen")));
+}
+
+#[tokio::test]
 async fn complete_native_restore_keeps_all_history_order_unknown_preferences_and_activity_provenance(
 ) {
     let fixture = Fixture::new();

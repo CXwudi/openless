@@ -1513,10 +1513,16 @@ export const es: typeof zhCN = {
       capsuleTranscriptDesc:
         'Muestra el texto reconocido en lugar de las barras de audio. Sin streaming, aparece al recibir el resultado. Desactiva para restaurar la vista original.',
       capsuleTranscriptFontSize: 'Tamaño de la transcripción',
-      capsuleDisplayModeLabel: "Cápsula en varias pantallas",
-      capsuleDisplayModeDesc: "Elige dónde aparece la cápsula. El modo de todas las pantallas utiliza más ventanas y recursos gráficos.",
-      capsuleDisplayCursorScreen: "Pantalla bajo el puntero",
-      capsuleDisplayAllScreens: "Mostrar en todas las pantallas",
+      capsuleDisplayModeLabel: 'Cápsula en varias pantallas',
+      capsuleDisplayModeDesc:
+        'Elige dónde aparece la cápsula. El modo de todas las pantallas utiliza más ventanas y recursos gráficos.',
+      capsuleDisplayCursorScreen: 'Pantalla bajo el puntero',
+      capsuleDisplayPrimaryScreen: 'Solo pantalla principal',
+      capsuleDisplayForegroundWindowScreen: 'Pantalla de la ventana en primer plano',
+      capsuleDisplayAllScreens: 'Mostrar en todas las pantallas',
+      capsuleDisplayModeRestartTitle: 'Reinicia OpenLess para aplicar el modo de pantalla',
+      capsuleDisplayModeRestartDesc:
+        'Cambiar del modo de todas las pantallas requiere reiniciar para cerrar las cápsulas anteriores. ¿Reiniciar ahora?',
       capsuleStyleLabel: 'Estilo de cápsula',
       capsuleStyleSiri: 'Estilo luminoso Siri',
       capsuleStyleClassic: 'Estilo predeterminado de OpenLess',

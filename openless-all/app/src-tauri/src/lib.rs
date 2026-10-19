@@ -3455,6 +3455,38 @@ pub(crate) fn position_capsule_bottom_center_with_style<R: tauri::Runtime>(
     )
 }
 
+#[cfg(target_os = "windows")]
+pub(crate) fn position_capsule_on_monitor<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    translation_active: bool,
+    style: types::CapsuleStyle,
+    monitor: capsule_mirrors::MonitorRect,
+) -> tauri::Result<()> {
+    let bounds = capsule_window_bounds_for_style_with_transcript_and_translation(
+        style,
+        false,
+        translation_active,
+    );
+    let bottom_gap = capsule_bottom_gap(style);
+    let (phys_w, phys_h, x, y) =
+        capsule_mirrors::capsule_placement(bounds.width, bounds.height, bottom_gap, monitor);
+    window.set_size(PhysicalSize::new(phys_w, phys_h))?;
+    log::debug!(
+        "[capsule] win position: target mon=({},{})..({},{}) scale={:.2} size=({}x{}) -> ({},{})",
+        monitor.left,
+        monitor.top,
+        monitor.right,
+        monitor.bottom,
+        monitor.scale,
+        phys_w,
+        phys_h,
+        x,
+        y
+    );
+    window.set_position(PhysicalPosition::new(x, y))?;
+    Ok(())
+}
+
 pub(crate) fn position_capsule_bottom_center_with_style_and_transcript<R: tauri::Runtime>(
     window: &tauri::WebviewWindow<R>,
     translation_active: bool,
@@ -3481,15 +3513,7 @@ pub(crate) fn position_capsule_bottom_center_with_style_and_transcript<R: tauri:
     #[cfg(target_os = "windows")]
     {
         if let Some(mon) = capsule_mirrors::target_monitor_rect(window) {
-            let (phys_w, phys_h, x, y) =
-                capsule_mirrors::capsule_placement(bounds.width, bounds.height, bottom_gap, mon);
-            window.set_size(PhysicalSize::new(phys_w, phys_h))?;
-            log::debug!(
-                "[capsule] win position: target mon=({},{})..({},{}) scale={:.2} size=({}x{}) -> ({},{})",
-                mon.left, mon.top, mon.right, mon.bottom, mon.scale, phys_w, phys_h, x, y
-            );
-            window.set_position(PhysicalPosition::new(x, y))?;
-            return Ok(());
+            return position_capsule_on_monitor(window, translation_active, style, mon);
         }
     }
 

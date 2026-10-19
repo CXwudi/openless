@@ -352,7 +352,8 @@ export interface UserPreferences {
   showCapsule: boolean;
   /** Recording capsule appearance; synced to the capsule window on save. */
   capsuleStyle: CapsuleStyle;
-  capsuleDisplayMode: 'cursorScreen' | 'allScreens';
+  capsuleDisplayMode: 'cursorScreen' | 'primaryScreen' | 'foregroundWindowScreen' | 'allScreens';
+  capsuleDisplayModeV2?: UserPreferences['capsuleDisplayMode'];
   capsuleTranscriptEnabled: boolean;
   capsuleTranscriptFontSize: number;
   /** Temporarily mutes system output during recording; restores the original mute state on stop/cancel/error. */

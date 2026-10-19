@@ -193,7 +193,22 @@ pub fn export_snapshot(mut snapshot: ExportSnapshot) -> DocumentResult<ExportedD
     // Retained documents must be explicit source profiles or unknown preferences. Never let
     // an archive silently replace live source fields or resurrect a deleted record.
     for retained in std::mem::take(&mut snapshot.retained_documents) {
+        let capsule_v2 =
+            retained.kind == DocumentKind::Preferences && retained.id == "capsuleDisplayModeV2";
+        if capsule_v2
+            && (preferences.contains_key("capsuleDisplayModeV2")
+                || matches!(
+                    preferences
+                        .get("capsuleDisplayMode")
+                        .and_then(Value::as_str),
+                    Some("primaryScreen" | "foregroundWindowScreen")
+                ))
+        {
+            // Explicit native V2 settings supersede an extension retained by an older client.
+            continue;
+        }
         let permitted = retained.kind == DocumentKind::DeviceProfile
+            || capsule_v2
             || retained.kind == DocumentKind::Preferences
                 && preference_field(&retained.id).is_none()
             || retained.kind == DocumentKind::UiPreferences

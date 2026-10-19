@@ -5114,6 +5114,14 @@ impl OpenLessBackend {
         preferences.vocabulary_learning_settings =
             preferences.vocabulary_learning_settings.normalized();
         let mut previous = self.preferences.get();
+        preferences.capsule_display_mode_v2 =
+            if preferences.capsule_display_mode != previous.capsule_display_mode {
+                Some(preferences.capsule_display_mode)
+            } else {
+                preferences
+                    .capsule_display_mode_v2
+                    .or(previous.capsule_display_mode_v2)
+            };
         crate::sync_dictation_hotkey_legacy_fields(&mut previous);
         crate::sync_dictation_hotkey_legacy_fields(&mut preferences);
         // The splash marker may only advance via take_splash_playback: when a
@@ -10538,6 +10546,54 @@ mod tests {
             events.try_recv(),
             Err(crate::EventRecvError::Empty)
         ));
+    }
+
+    #[test]
+    fn capsule_display_whole_settings_updates_preserve_v2_intent() {
+        let (backend, _) = backend();
+        let mut next = backend.get_preferences();
+        next.show_capsule = false;
+        backend
+            .update_settings(
+                next,
+                crate::SettingsUpdateOptions::STRICT,
+                &crate::NoopSettingsRuntime,
+            )
+            .unwrap();
+        assert_eq!(backend.get_preferences().capsule_display_mode_v2, None);
+        for mode in [
+            crate::CapsuleDisplayMode::AllScreens,
+            crate::CapsuleDisplayMode::CursorScreen,
+        ] {
+            let mut next = backend.get_preferences();
+            next.capsule_display_mode = mode;
+            next.capsule_display_mode_v2 = None;
+            backend
+                .update_settings(
+                    next,
+                    crate::SettingsUpdateOptions::STRICT,
+                    &crate::NoopSettingsRuntime,
+                )
+                .unwrap();
+            assert_eq!(
+                backend.get_preferences().capsule_display_mode_v2,
+                Some(mode)
+            );
+            let mut unrelated = backend.get_preferences();
+            unrelated.show_capsule = !unrelated.show_capsule;
+            unrelated.capsule_display_mode_v2 = None;
+            backend
+                .update_settings(
+                    unrelated,
+                    crate::SettingsUpdateOptions::STRICT,
+                    &crate::NoopSettingsRuntime,
+                )
+                .unwrap();
+            assert_eq!(
+                backend.get_preferences().capsule_display_mode_v2,
+                Some(mode)
+            );
+        }
     }
 
     #[test]

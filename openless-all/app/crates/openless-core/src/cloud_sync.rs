@@ -534,6 +534,8 @@ fn capture_preferences(
     SyncPreferences {
         theme_mode: Some(preferences.theme_mode),
         capsule_style: Some(preferences.capsule_style),
+        capsule_display_mode: None,
+        capsule_display_mode_v2: None,
         default_mode: Some(preferences.default_mode),
         enabled_modes: Some(preferences.enabled_modes.clone()),
         active_style_pack_id: Some(preferences.active_style_pack_id.clone()),
@@ -557,6 +559,18 @@ fn capture_preferences(
 }
 
 fn apply_preferences(preferences: &mut UserPreferences, incoming: &SyncPreferences) {
+    let v2 = incoming
+        .capsule_display_mode_v2
+        .or(preferences.capsule_display_mode_v2)
+        .or_else(|| {
+            incoming
+                .capsule_display_mode
+                .and_then(crate::CapsuleDisplayMode::extended_sync_mode)
+        });
+    if let Some(mode) = v2.or(incoming.capsule_display_mode) {
+        preferences.capsule_display_mode = mode;
+        preferences.capsule_display_mode_v2 = v2;
+    }
     macro_rules! apply { ($($field:ident),+ $(,)?) => { $(if let Some(value) = &incoming.$field { preferences.$field = value.clone(); })+ }; }
     apply!(
         theme_mode,

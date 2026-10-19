@@ -1533,10 +1533,16 @@ export const fr: typeof zhCN = {
       capsuleTranscriptDesc:
         'Affiche le texte reconnu à la place des barres audio. Sans streaming, le texte apparaît à réception du résultat. Désactivez pour retrouver l’affichage initial.',
       capsuleTranscriptFontSize: 'Taille de la transcription',
-      capsuleDisplayModeLabel: "Capsule sur plusieurs écrans",
-      capsuleDisplayModeDesc: "Choisissez où afficher la capsule. Le mode tous les écrans utilise davantage de fenêtres et de ressources graphiques.",
-      capsuleDisplayCursorScreen: "Écran sous le pointeur",
-      capsuleDisplayAllScreens: "Afficher sur tous les écrans",
+      capsuleDisplayModeLabel: 'Capsule sur plusieurs écrans',
+      capsuleDisplayModeDesc:
+        'Choisissez où afficher la capsule. Le mode tous les écrans utilise davantage de fenêtres et de ressources graphiques.',
+      capsuleDisplayCursorScreen: 'Écran sous le pointeur',
+      capsuleDisplayPrimaryScreen: 'Écran principal uniquement',
+      capsuleDisplayForegroundWindowScreen: 'Écran de la fenêtre au premier plan',
+      capsuleDisplayAllScreens: 'Afficher sur tous les écrans',
+      capsuleDisplayModeRestartTitle: 'Redémarrer OpenLess pour appliquer le mode d’affichage',
+      capsuleDisplayModeRestartDesc:
+        'Quitter le mode tous les écrans nécessite un redémarrage pour fermer les anciennes capsules. Redémarrer maintenant ?',
       capsuleStyleLabel: 'Style de capsule',
       capsuleStyleSiri: 'Style lumineux Siri',
       capsuleStyleClassic: 'Style par défaut d’OpenLess',
