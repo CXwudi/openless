@@ -93,7 +93,6 @@ pub(super) struct Transcript {
 impl Transcript {
     /// Ignore completion markers from before the recording's stop boundary.
     pub(super) fn begin_finish(&mut self) {
-        self.final_received = false;
         self.generation_complete = false;
         self.activity_ended = false;
     }
@@ -110,7 +109,7 @@ impl Transcript {
                 self.completed.push(text.to_owned());
             }
             self.interim.clear();
-            self.final_received |= finishing;
+            self.final_received = true;
         }
         if finishing {
             self.generation_complete |= content["generationComplete"] == true;
@@ -128,10 +127,11 @@ impl Transcript {
         crate::asr::qwen_realtime::join_segments(&segments)
     }
 
-    /// Generation and input transcription can arrive in either order.
-    pub(super) fn is_complete(&self, silence: bool) -> bool {
-        (self.final_received && (self.generation_complete || self.activity_ended))
-            || (silence && self.activity_ended)
+    /// Completion markers permit draining, but unresolved speculative text must still be finalized.
+    pub(super) fn can_finish(&self, silence: bool) -> bool {
+        self.interim.is_empty()
+            && ((self.final_received && (self.generation_complete || self.activity_ended))
+                || (silence && self.activity_ended))
     }
 
     /// Speculative text is never promoted to a successful final result.

@@ -385,7 +385,10 @@ async fn multimodal_live_previews_before_stop_and_uses_smart_final_without_a_sec
 }
 
 /// Exercise the production phase checks, insertion, and history through both audio entrypoints.
-async fn backend_finalizes_live_segments(segments: &'static [&'static str]) {
+async fn backend_finalizes_live_segments(
+    segments: &'static [&'static str],
+    completion_first: bool,
+) {
     for microphone in [false, true] {
         let (listener, endpoint) = endpoint().await;
         let server = tokio::spawn(async move {
@@ -408,12 +411,23 @@ async fn backend_finalizes_live_segments(segments: &'static [&'static str]) {
                     .await
                     .unwrap();
             }
+            if completion_first {
+                socket
+                    .send(Message::Text(
+                        json!({"serverContent": {
+                            "generationComplete": true, "turnComplete": true
+                        }})
+                        .to_string(),
+                    ))
+                    .await
+                    .unwrap();
+            }
             for (index, text) in segments.iter().enumerate() {
                 socket
                     .send(Message::Text(
                         json!({"serverContent": {
                             "inputTranscription": {"text": text},
-                            "generationComplete": index + 1 == segments.len()
+                            "generationComplete": !completion_first && index + 1 == segments.len()
                         }})
                         .to_string(),
                     ))
@@ -524,12 +538,16 @@ async fn backend_finalizes_live_segments(segments: &'static [&'static str]) {
 
 #[tokio::test]
 async fn multimodal_backend_accepts_revised_final_after_stop() {
-    backend_finalizes_live_segments(&[SMART]).await;
+    backend_finalizes_live_segments(&[SMART], false).await;
 }
 
 #[tokio::test]
 async fn multimodal_backend_preserves_multiple_final_segments_after_stop() {
-    backend_finalizes_live_segments(&["Can we meet on Tuesday?", "Wednesday works better."]).await;
+    backend_finalizes_live_segments(
+        &["Can we meet on Tuesday?", "Wednesday works better."],
+        false,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -726,4 +744,9 @@ async fn dropping_multimodal_finish_during_microphone_stop_closes_live_and_remov
     assert_eq!(failure.error.code, BackendErrorCode::InvalidState);
     within(server).await.unwrap();
     assert!(events.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn multimodal_backend_preserves_segments_when_completion_arrives_first() {
+    backend_finalizes_live_segments(&["First.", "Second."], true).await;
 }

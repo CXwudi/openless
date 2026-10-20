@@ -76,14 +76,14 @@ fn turn_complete_alone_never_promotes_interim_text() {
         }}),
         true,
     );
-    assert!(!transcript.is_complete(false));
+    assert!(!transcript.can_finish(false));
     assert_eq!(transcript.final_text(), "Confirmed.");
     transcript.update(&json!({"voiceActivity": {"type": "ACTIVITY_END"}}), true);
-    assert!(!transcript.is_complete(false));
+    assert!(!transcript.can_finish(false));
     transcript.update(
         &json!({"serverContent": {"inputTranscription": {"text": "Confirmed."}}}),
         true,
     );
-    assert!(transcript.is_complete(false));
+    assert!(transcript.can_finish(false));
     assert_eq!(transcript.final_text(), "Confirmed. Confirmed.");
 }

@@ -16,6 +16,7 @@ use tokio::time::timeout;
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 
 mod buffered_audio;
+mod finalization;
 mod lifecycle;
 mod protocol_contract;
 mod transport_contract;

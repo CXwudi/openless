@@ -326,3 +326,36 @@ async fn server_error_or_disconnect_never_returns_a_partial_transcript_as_succes
         server.await.unwrap();
     }
 }
+
+#[tokio::test]
+async fn final_received_before_stop_does_not_require_a_duplicate_after_stop() {
+    let (endpoint, server) = serve(|mut socket| async move {
+        ready(&mut socket).await;
+        let audio = receive(&mut socket).await;
+        assert!(audio["realtimeInput"]["audio"].is_object());
+        send(
+            &mut socket,
+            json!({"serverContent": {"inputTranscription": {"text": "Already final."}}}),
+            true,
+        )
+        .await;
+        assert!(receive_audio_until_end(&mut socket).await.is_empty());
+        send(
+            &mut socket,
+            json!({"serverContent": {"generationComplete": true, "turnComplete": true}}),
+            true,
+        )
+        .await;
+        assert_closed(&mut socket).await;
+    })
+    .await;
+    let (capture, mut published) = notifying_capture();
+    let asr = connect(&endpoint, capture.clone()).await;
+    asr.consume_pcm_chunk(&[1; 3_200]);
+    wait_for_snapshots(&mut published, 1).await;
+    let transcript = timeout(TEST_TIMEOUT, asr.finish()).await.unwrap().unwrap();
+    assert_eq!(transcript.text, "Already final.");
+    assert_eq!(transcript.duration_ms, 100);
+    capture.snapshots.assert_snapshots(&["Already final."]);
+    server.await.unwrap();
+}
