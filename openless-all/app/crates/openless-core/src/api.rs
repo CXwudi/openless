@@ -5222,11 +5222,14 @@ impl OpenLessBackend {
             .list_channels(ChannelKind::Asr)
             .await
         {
-            Ok(channels) => channels
-                .into_iter()
-                .find(|channel| channel.id == selected_id)
-                .map(|channel| channel.provider_type)
-                .unwrap_or(selected_id),
+            Ok(channels) => {
+                let provider = channels
+                    .iter()
+                    .find(|channel| channel.id == selected_id)
+                    .or_else(|| channels.first())
+                    .map(|channel| channel.provider_type.clone());
+                provider.unwrap_or(selected_id)
+            }
             Err(_) => selected_id,
         };
         crate::cloud_providers::SHARED_CLOUD_ASR_PROVIDER_TYPES.contains(&provider_type.as_str())
