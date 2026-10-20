@@ -80,6 +80,7 @@ const KOTLIN_FILES = [
   'OpenLessRuntimeService.kt',
   'OpenLessBackendWarmupActivity.kt',
   'OpenLessClipboardHistory.kt',
+  'CloudNoteDelivery.kt',
   'OpenLessKeyboardSettingsActivity.kt',
   'OpenLessLocalMigrationActivity.kt',
   'OpenLessProcessRestartStats.kt',
@@ -88,6 +89,7 @@ const KOTLIN_FILES = [
 
 const KOTLIN_TEST_FILES = [
   'ImeLearningPolicyTest.kt',
+  'CloudNoteDeliveryTest.kt',
   'DictationSpanTest.kt',
   'ImePrivacyPolicyTest.kt',
   'ImeDraftReplacementTest.kt',
@@ -104,6 +106,7 @@ const KOTLIN_TEST_FILES = [
   'OpenLessAccessibilityComponentIdsTest.kt',
 ];
 const KOTLIN_ANDROID_TEST_FILES = [
+  'OpenLessClipboardHistoryInstrumentedTest.kt',
   'OpenLessCredentialVaultInstrumentedTest.kt',
   'ImeLearningMigrationTest.kt',
   'OpenLessMigrationBundleInstrumentedTest.kt',
