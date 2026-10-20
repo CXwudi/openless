@@ -1,6 +1,11 @@
 import type { zhCN } from './zh-CN';
 
+import { uiRefinementEn as uiRefinement } from './uiRefinement';
+import { experimentalAsrEn as experimentalAsr } from './experimentalAsr';
+
 export const es: typeof zhCN = {
+  experimentalAsr,
+  uiRefinement,
   voiceEdit: {
     title: 'Sesión de edición por voz',
     description:
@@ -1259,6 +1264,13 @@ export const es: typeof zhCN = {
     cancelledTitle: 'Grabación cancelada',
   },
   settings: {
+    testingFeatures: {
+      title: 'Funciones en fase de pruebas',
+      enable: 'Activar funciones en fase de pruebas',
+      description:
+        'Mostrar Less Computer y la consola de Claude para configurarlos y usarlos en plataformas compatibles. Al desactivar esta opción, se detienen las tareas y se ocultan las entradas, pero se conservan los ajustes. Solo se aplica a este dispositivo.',
+      unavailable: 'Todavía no hay funciones de prueba disponibles en esta plataforma.',
+    },
     selectionWorkspace: {
       title: 'Asistente de selección',
       hint: 'Selecciona texto y usa un solo atajo: mejora el texto si la edición por voz está desactivada; si está activada, mantén pulsado y habla, y luego elige Preguntar o Editar.',
@@ -1338,6 +1350,16 @@ export const es: typeof zhCN = {
       cursorContextLabel: 'Contexto del cursor (experimental)',
       cursorContextDesc:
         'Envía un fragmento breve del texto cercano al cursor al modelo como referencia para nombres propios, homófonos y pronombres al pulir (macOS / Windows / Android). El dictado, las notas rápidas y las notas en la nube lo usan, pero el contexto en sí nunca se guarda en notas, historial ni registros; con un modelo en la nube se envía a ese proveedor junto con la solicitud de pulido. Es independiente del aprendizaje local. Se excluyen contraseñas, terminales y aplicaciones sensibles conocidas.',
+    },
+    localMigration: {
+      title: 'Migración de configuración local',
+      description:
+        'Exporta toda la configuración local portable a un paquete versionado o restáurala en otro dispositivo Android. El modo de compartir está anonimizado de forma predeterminada; la migración personal solo puede incluir credenciales protegidas con contraseña. El flujo nativo muestra el origen, la versión, las categorías y los cambios antes de fusionar o reemplazar.',
+      safetyNote:
+        'Los permisos del sistema, las sesiones OAuth, las rutas del dispositivo y el estado de ejecución nunca se migran. Se crea una copia local antes de importar.',
+      open: 'Abrir migración local',
+      opening: 'Abriendo…',
+      openFailed: 'No se pudo abrir la migración local. Inténtalo de nuevo desde Ajustes.',
     },
     codingConsole: {
       title: 'Consola de Claude',
@@ -1501,6 +1523,16 @@ export const es: typeof zhCN = {
       capsuleTranscriptDesc:
         'Muestra el texto reconocido en lugar de las barras de audio. Sin streaming, aparece al recibir el resultado. Desactiva para restaurar la vista original.',
       capsuleTranscriptFontSize: 'Tamaño de la transcripción',
+      capsuleDisplayModeLabel: 'Cápsula en varias pantallas',
+      capsuleDisplayModeDesc:
+        'Elige dónde aparece la cápsula. El modo de todas las pantallas utiliza más ventanas y recursos gráficos.',
+      capsuleDisplayCursorScreen: 'Pantalla bajo el puntero',
+      capsuleDisplayPrimaryScreen: 'Solo pantalla principal',
+      capsuleDisplayForegroundWindowScreen: 'Pantalla de la ventana en primer plano',
+      capsuleDisplayAllScreens: 'Mostrar en todas las pantallas',
+      capsuleDisplayModeRestartTitle: 'Reinicia OpenLess para aplicar el modo de pantalla',
+      capsuleDisplayModeRestartDesc:
+        'Cambiar del modo de todas las pantallas requiere reiniciar para cerrar las cápsulas anteriores. ¿Reiniciar ahora?',
       capsuleStyleLabel: 'Estilo de cápsula',
       capsuleStyleSiri: 'Estilo luminoso Siri',
       capsuleStyleClassic: 'Estilo predeterminado de OpenLess',
@@ -1510,6 +1542,9 @@ export const es: typeof zhCN = {
       lowLatencyDictationLabel: 'Captura de baja latencia',
       lowLatencyDictationDesc:
         'Mantén preparado el flujo del micrófono y conserva hasta 500 ms en memoria para reducir la pérdida de voz justo después del atajo. El audio no se guarda ni se sube antes de confirmar la grabación; consume más energía y mantiene activo el indicador del micrófono.',
+      audioEnhancementLabel: 'Mejora ligera del micrófono',
+      audioEnhancementDesc:
+        'Aplica una ganancia ligera, limitación suave y reducción de ruido conservadora al micrófono local. No incluye cancelación de eco. Desactivada de forma predeterminada.',
       muteDuringRecordingLabel: 'Silenciar durante la grabación',
       muteDuringRecordingDesc:
         'Silencia temporalmente el sonido del sistema durante la entrada de voz para evitar el eco de los altavoces.',
@@ -1527,6 +1562,9 @@ export const es: typeof zhCN = {
       pasteShortcutCtrlV: 'Ctrl+V (predeterminado / mayoría de aplicaciones)',
       pasteShortcutCtrlShiftV: 'Ctrl+Shift+V (kitty / alacritty / wezterm / mayoría de terminales)',
       pasteShortcutShiftInsert: 'Shift+Insert (xterm / urxvt)',
+      plainTextInsertionLabel: 'Modo de inserción de texto plano',
+      plainTextInsertionDesc:
+        'Al activarlo, el pegado simulado usa Shift+Insert en lugar de Ctrl+V (el atajo superior queda bloqueado mientras esté activo). Actívalo solo en casos muy especiales, p. ej. cuando un cambiador de disposición de teclado como Punto Switcher intercepta Ctrl+V. Solo se aplica al pegado desde el portapapeles (solo Windows).',
       comboRecordLabel: 'Grabar atajo',
       comboRecordDesc:
         'Pulsa aquí y después la combinación deseada (p. ej., ⌘⇧D). Admite los modos Alternar y Mantener para hablar.',
@@ -1577,6 +1615,9 @@ export const es: typeof zhCN = {
       historyMaxEntriesLabel: 'Máximo de registros',
       historyMaxEntriesDesc:
         'Máximo de sesiones guardadas en el dispositivo. Vacío = 200. Intervalo: 5–200.',
+      polishSkipMaxCharsLabel: 'Omitir mejora en dictados cortos (máx. caracteres)',
+      polishSkipMaxCharsDesc:
+        'Las transcripciones de hasta N caracteres (sin contar espacios) se insertan tal cual, sin llamar al LLM. 0 = desactivado. La traducción siempre se mejora.',
       polishContextWindowLabel: 'Ventana de contexto para mejorar texto (minutos)',
       polishContextWindowDesc:
         'Usa las transcripciones mejoradas de los últimos N minutos como contexto de varias intervenciones. 0 = desactivado.',
@@ -1743,6 +1784,9 @@ export const es: typeof zhCN = {
         asrSherpaOnnxLocal: 'sherpa-onnx local (experimental)',
         asrFoundryLocalWhisper: 'Whisper local (Foundry Local)',
         asrLocalWhisper: 'Whisper local (por lotes)',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
+        asrExperimentalTextStream: experimentalAsr.textStreamLabel,
         asrLocalQwen3: 'Qwen3-ASR local',
         asrLocalQwen3Mlx: 'Qwen3-ASR local (MLX / Metal)',
         asrLocalQwen3C: 'Qwen3-ASR local (C / CPU)',
@@ -2113,6 +2157,7 @@ export const es: typeof zhCN = {
         background: 'Con la aplicación en segundo plano',
         keyboard: 'Cuando aparece el teclado',
         always: 'Siempre visible',
+        never: 'Nunca mostrar',
       },
       androidOverlayTriggerHint: {
         background:
@@ -2120,6 +2165,7 @@ export const es: typeof zhCN = {
         keyboard:
           'Este modo se ha retirado. Los ajustes existentes vuelven al modo de segundo plano.',
         always: 'Siempre disponible, pero permanece en pantalla.',
+        never: 'Nunca aparece automáticamente; el teclado sigue disponible.',
       },
       androidOverlayTriggerDisabled: {
         keyboard:
@@ -2202,6 +2248,9 @@ export const es: typeof zhCN = {
         'SendInput Unicode escribe directamente, sin pasar por TSF / IME y sin cambiar de método de entrada.',
       streamingInsertHintLinux:
         'Usa el complemento fcitx5 para enviar texto; la inserción progresiva simula teclas mediante enigo + XTest.',
+      windowsCompositionInputLabel: 'Mostrar la transcripción en vivo en el campo (Windows)',
+      windowsCompositionInputDesc:
+        'Mientras hablas, el texto reconocido aparece subrayado en el campo y se reemplaza por el resultado final al terminar. Requiere el componente de entrada TSF de OpenLess y una aplicación compatible con TSF.',
       streamingInsertSaveClipboardLabel: 'Copiar al portapapeles',
       streamingInsertSaveClipboardHint:
         'Después de insertar correctamente, copia el texto final al portapapeles para poder pegarlo otra vez con Cmd+V. Desactivado: no se modifica el portapapeles.',
@@ -2210,6 +2259,9 @@ export const es: typeof zhCN = {
         'Sustituye el ASR en la nube por inferencia en el dispositivo. Para uso sin conexión o con datos sensibles.',
       localAsrWarningShort:
         'La inferencia local es más lenta; un equipo poco potente puede omitir palabras.',
+      localAsrFallbackLabel: 'Usar el modelo local si falla la nube',
+      localAsrFallbackDesc:
+        'Con conexión débil o sin conexión, transcribe la grabación con el modelo local descargado en lugar de esperar los reintentos en la nube. Requiere un modelo local descargado.',
       qwen3Desc: 'Al activarlo, sustituirá al proveedor ASR.',
       sherpaDesc: 'Al activarlo, sustituirá al proveedor ASR.',
       foundryDesc: 'Al activarlo, sustituirá al proveedor ASR.',
@@ -2411,7 +2463,12 @@ export const es: typeof zhCN = {
     noResults: 'No se encontraron categorías. Prueba «micrófono», «modelos» o «tema».',
     autoSaveHint: 'Los cambios se guardan automáticamente',
     backToAdvanced: 'Volver a Experimentos y extensiones',
+    backToTestingFeatures: 'Volver a funciones en fase de pruebas',
     advancedPages: {
+      customSyncServer:
+        'Solo para servicios propios; la sincronización oficial no requiere configuración.',
+      localModels: experimentalAsr.description,
+      testingFeatures: 'Activar opcionalmente las funciones que siguen en pruebas.',
       vocabularyLearning:
         'Aprender de correcciones manuales; configurar observación, confirmación y longitud.',
       lessComputer: 'Elige un agente y configura su modelo, permisos y directorio de trabajo.',
@@ -2429,7 +2486,8 @@ export const es: typeof zhCN = {
       appearance: 'Ajusta el tema, el diseño y el idioma de la interfaz para leer con comodidad.',
       privacy:
         'Comprueba los permisos y las conexiones. Administra el historial, las grabaciones y los datos locales.',
-      advanced: 'Configura Less Computer y la depuración según tus necesidades.',
+      advanced:
+        'Configurar funciones de prueba, aprendizaje de vocabulario y herramientas de depuración.',
       about: 'Consulta tu versión, el canal y los ajustes de actualización automática.',
     },
     searchKeywords: {
@@ -2580,7 +2638,10 @@ export const es: typeof zhCN = {
     foundryError: 'Estado de Foundry',
     foundrySetDefault: 'Usar como predeterminado / Activar ASR local de Windows',
     foundryEnabling: 'Activando…',
-    foundryPrepare: 'Preparar / Descargar / Cargar',
+    foundryPrepare: 'Descargar / verificar modelo',
+    runtimeDownloadRestart:
+      'La descarga utilizó componentes nativos. Reinicia OpenLess antes de activar el modelo; no se activará automáticamente. ¿Reiniciar ahora?',
+    restartNow: 'Reiniciar ahora',
     foundryPreparing: 'Preparando…',
     foundryReleasing: 'Liberando…',
     foundryRetryPrepare: 'Continuar / Reintentar preparación',

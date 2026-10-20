@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use futures_util::future::BoxFuture;
 
+use crate::audio::AudioProcessingConfig;
 use crate::dictation_context::DictationContext;
 use crate::errors::{BackendError, BackendErrorCode};
 use crate::types::{InsertStatus, PolishDelta, SessionId, TranscriptDelta};
@@ -505,6 +506,7 @@ pub struct CaptureStartRequest {
     pub microphone_device_name: Option<String>,
     pub low_latency: bool,
     pub pre_roll_ms: u16,
+    pub audio_processing: AudioProcessingConfig,
 }
 
 /// An optional host-owned capture that starts before a dictation session is
@@ -719,6 +721,18 @@ pub trait TextInsertionSession: Send + Sync {
     }
 
     fn write(&self, text: String) -> BoxFuture<'static, Result<InsertWriteResult, BackendError>>;
+    /// Shows the transcript so far as an in-place composition (underlined, not yet
+    /// committed) in the target document. Each call replaces the previous one; the
+    /// final text still arrives through `finish`, which replaces the composition.
+    fn update_composition(&self, text: String) -> BoxFuture<'static, Result<(), BackendError>> {
+        let _ = text;
+        Box::pin(async {
+            Err(BackendError::new(
+                BackendErrorCode::Unsupported,
+                "composition display is unavailable on this platform",
+            ))
+        })
+    }
     fn copy(&self, text: String) -> BoxFuture<'static, Result<(), BackendError>>;
     fn finish(&self, final_text: String)
         -> BoxFuture<'static, Result<InsertOutcome, BackendError>>;

@@ -203,7 +203,7 @@ async fn normal_close_completes_drain_but_provider_errors_still_fail() {
             false,
         ),
         (
-            Message::Text(json!({"error": {"code": 429}}).to_string()),
+            Message::text(json!({"error": {"code": 429}}).to_string()),
             false,
         ),
     ] {

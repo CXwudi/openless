@@ -4,8 +4,13 @@ import { en } from './en';
 // Japanese (Beta) — AI machine translation based; native-speaker review recommended.
 // Structure mirrors zh-CN.ts. When adding new keys, update ja.ts / ko.ts as well
 // (keys not updated fall back to English via ...en).
+import { uiRefinementJa as uiRefinement } from './uiRefinement';
+import { experimentalAsrEn as experimentalAsr } from './experimentalAsr';
+
 export const ja: typeof zhCN = {
   ...en,
+  experimentalAsr,
+  uiRefinement,
   voiceEdit: {
     title: '音声編集セッション',
     description:
@@ -157,7 +162,7 @@ export const ja: typeof zhCN = {
       '同期範囲のローカルデータを置き換えます。ローカルの変更を残すにはマージを選んでください。',
     restoreCheck: '復元方法と競合の選択を確認しました。',
     applyRestore: '復元を確認',
-    conflictProgress: '{{total}} 件中 {{selected}} 件を選択済み',
+    conflictProgress: '競合を {{selected}} / {{total}} 件解決済み',
     conflictItem: '競合 {{index}} · {{category}}',
     conflictLocal: 'ローカルを使用',
     conflictCloud: 'クラウドを使用',
@@ -1232,6 +1237,13 @@ export const ja: typeof zhCN = {
     cancelledTitle: '録音をキャンセルしました',
   },
   settings: {
+    testingFeatures: {
+      title: 'テスト中の機能',
+      enable: 'テスト中の機能を有効にする',
+      description:
+        '対応するプラットフォームで Less Computer と Claude コンソールを表示し、設定・使用できます。オフにすると実行中のタスクを停止して項目を非表示にしますが、設定は保持されます。このデバイスのみに適用されます。',
+      unavailable: 'このプラットフォームでは、利用できるテスト機能はまだありません。',
+    },
     selectionWorkspace: {
       title: '選択範囲アシスタント',
       hint: 'テキスト選択後、同じショートカットで：音声編集オフ時は推敲、オン時は押しながら話してから「質問」か「編集」を選択。',
@@ -1307,6 +1319,16 @@ export const ja: typeof zhCN = {
       cursorContextLabel: 'カーソル文脈（実験的）',
       cursorContextDesc:
         '推敲時にカーソル付近の短い文章を参考情報としてモデルへ送信し、固有名詞・同音語・指示語の判断に使います（macOS / Windows / Android）。音声入力、クイックメモ、クラウドメモのいずれも参照しますが、コンテキスト自体がメモ・履歴・ログに書き込まれることはありません。クラウドモデル使用時は、推敲リクエストとともにそのプロバイダーへ送信されます。端末内の単語学習とは独立した設定です。パスワード欄、ターミナル、既知の機密アプリは除外します。',
+    },
+    localMigration: {
+      title: 'ローカル設定の移行',
+      description:
+        '移行可能なローカル設定をバージョン付きバンドルに書き出すか、別の Android 端末に復元します。共有モードはデフォルトで匿名化され、個人移行で認証情報を含める場合はパスワード保護が必要です。ネイティブ画面で統合または置換の前に、出所、バージョン、カテゴリ、変更内容を確認できます。',
+      safetyNote:
+        'システム権限、OAuth セッション、端末パス、実行時状態は移行されません。インポート前にローカルバックアップを作成します。',
+      open: 'ローカル移行を開く',
+      opening: '開いています…',
+      openFailed: 'ローカル移行を開けませんでした。設定からもう一度お試しください。',
     },
     codingConsole: {
       title: 'Claude コンソール',
@@ -1468,6 +1490,16 @@ export const ja: typeof zhCN = {
       capsuleTranscriptDesc:
         '音声バーの代わりに認識した原文を表示します。オフにすると元の表示に戻ります。非ストリーミング認識は結果の受信後に表示します。',
       capsuleTranscriptFontSize: '文字起こしの文字サイズ',
+      capsuleDisplayModeLabel: '複数画面のカプセル',
+      capsuleDisplayModeDesc:
+        '録音カプセルを表示する画面を選択します。すべての画面ではウィンドウと描画リソースの使用量が増えます。',
+      capsuleDisplayCursorScreen: 'マウスポインターのある画面',
+      capsuleDisplayPrimaryScreen: 'メインディスプレイのみ',
+      capsuleDisplayForegroundWindowScreen: '前面ウィンドウのある画面',
+      capsuleDisplayAllScreens: 'すべての画面に表示',
+      capsuleDisplayModeRestartTitle: '表示モードを適用するには OpenLess を再起動してください',
+      capsuleDisplayModeRestartDesc:
+        'すべての画面表示から切り替えるには、以前のカプセルウィンドウを閉じるため再起動が必要です。今すぐ再起動しますか？',
       capsuleStyleLabel: 'カプセルスタイル',
       capsuleStyleSiri: '光条 Siri スタイル',
       capsuleStyleClassic: 'Openless デフォルトスタイル',
@@ -1477,6 +1509,9 @@ export const ja: typeof zhCN = {
       lowLatencyDictationLabel: '低遅延キャプチャ',
       lowLatencyDictationDesc:
         'マイクストリームを準備し、最大 500 ミリ秒をメモリに保持して、ホットキー直後の音声が欠落しにくくします。録音を確定するまで音声は保存・アップロードされません。電力を多く使い、マイク使用中の表示が続きます。',
+      audioEnhancementLabel: '軽量マイク拡張',
+      audioEnhancementDesc:
+        'ローカルマイクに軽いノイズ抑制、ゲイン、ソフトリミッターを適用します。エコーキャンセルは含みません。既定ではオフです。',
       muteDuringRecordingLabel: '録音中はミュート',
       muteDuringRecordingDesc:
         '録音中にシステム出力を一時的にミュートし、スピーカーのエコーを防ぎます。',
@@ -1494,6 +1529,9 @@ export const ja: typeof zhCN = {
       pasteShortcutCtrlV: 'Ctrl+V（既定 / ほとんどのアプリ）',
       pasteShortcutCtrlShiftV: 'Ctrl+Shift+V（kitty / alacritty / wezterm / ほとんどのターミナル）',
       pasteShortcutShiftInsert: 'Shift+Insert（xterm / urxvt）',
+      plainTextInsertionLabel: 'プレーンテキスト挿入モード',
+      plainTextInsertionDesc:
+        'オンにすると、模擬貼り付けは Ctrl+V の代わりに Shift+Insert を使います（オン中は上のショートカットを変更できません）。極めて特殊な場合にのみオンにしてください（例：Punto Switcher などのキーボード配列切替ツールが Ctrl+V を奪う場合）。クリップボード貼り付け方式にのみ適用されます（Windows のみ）。',
       comboRecordLabel: 'ショートカットを記録',
       comboRecordDesc:
         'クリック後、希望するキーの組み合わせ（例：⌘⇧D）を押してください。トグル / 押し続けの両方に対応。',
@@ -1542,6 +1580,9 @@ export const ja: typeof zhCN = {
         '保持日数を超えた履歴は新規書き込み時に削除されます。0 = 時間で削除しない。',
       historyMaxEntriesLabel: '履歴件数の上限',
       historyMaxEntriesDesc: 'ローカル保持セッション上限。空欄 = 200。範囲 5–200。',
+      polishSkipMaxCharsLabel: '短い入力は整形をスキップ（最大文字数）',
+      polishSkipMaxCharsDesc:
+        '空白を除いて N 文字以下の認識結果は、LLM を呼び出さずそのまま挿入します。0 = オフ。翻訳は常に整形します。',
       polishContextWindowLabel: '会話コンテキスト窓（分）',
       polishContextWindowDesc:
         '直近 N 分間の整文済み転写をマルチターン文脈として渡します。0 = 無効。',
@@ -1703,6 +1744,9 @@ export const ja: typeof zhCN = {
         asrSherpaOnnxLocal: 'ローカル sherpa-onnx（実験的）',
         asrFoundryLocalWhisper: 'ローカル Whisper（Foundry Local）',
         asrLocalWhisper: 'ローカル Whisper（バッチ）',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
+        asrExperimentalTextStream: experimentalAsr.textStreamLabel,
         asrLocalQwen3: 'ローカル Qwen3-ASR',
         asrLocalQwen3Mlx: 'ローカル Qwen3-ASR（MLX / Metal）',
         asrLocalQwen3C: 'ローカル Qwen3-ASR（C / CPU）',
@@ -2056,11 +2100,13 @@ export const ja: typeof zhCN = {
         background: 'バックグラウンド',
         keyboard: 'キーボード表示時',
         always: '常時',
+        never: '表示しない',
       },
       androidOverlayTriggerHint: {
         background: 'シンプル',
         keyboard: 'このモードは保留中です。既存設定はバックグラウンドに戻します。',
         always: '常に表示',
+        never: '自動表示しません。キーボードは引き続き使用できます。',
       },
       androidOverlayTriggerDisabled: {
         keyboard:
@@ -2132,12 +2178,18 @@ export const ja: typeof zhCN = {
         'SendInput Unicode で TSF / IME を迂回。入力ソースの切替は不要です。',
       streamingInsertHintLinux:
         'fcitx5 プラグインで文字を送信。ストリーミング入力は enigo + XTest でキー合成。',
+      windowsCompositionInputLabel: 'リアルタイム原文を入力欄に表示（Windows）',
+      windowsCompositionInputDesc:
+        '録音中、認識された文字を下線付きの変換中テキストとして入力欄に表示し、終了時に最終結果に置き換えます。OpenLess の TSF 入力コンポーネントと、テキストサービスフレームワーク（TSF）に対応したアプリが必要です。',
       streamingInsertSaveClipboardLabel: 'クリップボードに保存',
       streamingInsertSaveClipboardHint:
         '挿入成功後に最終テキストをクリップボードへ書き込み、Cmd+V で再貼付け可能にします。OFF ではクリップボードに触れません。',
       localAsrTitle: 'ローカル ASR モデル',
       localAsrDesc: '転写をクラウドから本機推論に切り替えます。オフライン／プライバシー重視向け。',
       localAsrWarningShort: 'ローカル推論は遅く、スペック不足では欠字の可能性があります。',
+      localAsrFallbackLabel: 'クラウド認識に失敗したらローカルモデルを使う',
+      localAsrFallbackDesc:
+        '通信が不安定、またはオフラインのとき、クラウドの再試行を待たずにダウンロード済みのローカルモデルで録音を認識します。ローカルモデルのダウンロードが必要です。',
       qwen3Desc: '有効化すると ASR プロバイダーが引き継がれます。',
       sherpaDesc: '有効化すると ASR プロバイダーが引き継がれます。',
       foundryDesc: '有効化すると ASR プロバイダーが引き継がれます。',
@@ -2334,7 +2386,11 @@ export const ja: typeof zhCN = {
     noResults: 'カテゴリが見つかりません。「マイク」「モデル」「テーマ」などをお試しください。',
     autoSaveHint: '変更は自動保存されます',
     backToAdvanced: '実験と拡張に戻る',
+    backToTestingFeatures: 'テスト中の機能に戻る',
     advancedPages: {
+      customSyncServer: 'セルフホスト専用です。公式の同期には設定は不要です。',
+      localModels: experimentalAsr.description,
+      testingFeatures: 'テスト中の機能を必要に応じて有効にします。',
       vocabularyLearning:
         '音声入力後の手動修正から学習し、監視時間・確認時間・文字数を設定します。',
       lessComputer: 'Agent を選び、モデル・権限・作業ディレクトリを設定します。',
@@ -2349,7 +2405,7 @@ export const ja: typeof zhCN = {
       services: '音声認識と文章処理のサービス、チャンネル、ローカルモデル、接続を管理します。',
       appearance: 'テーマ、レイアウト、表示言語を読みやすく調整します。',
       privacy: 'システム権限と接続を確認し、履歴、録音、ローカルデータを管理します。',
-      advanced: '必要に応じて Less Computer とデバッグを設定します。',
+      advanced: 'テスト機能、語彙学習、デバッグツールを設定します。',
       about: '現在のバージョン、更新チャンネル、自動更新を確認します。',
     },
     searchKeywords: {
@@ -2498,7 +2554,10 @@ export const ja: typeof zhCN = {
     foundryError: 'Foundry 状態',
     foundrySetDefault: '既定に設定 / Windows ローカル ASR を有効化',
     foundryEnabling: '有効化中…',
-    foundryPrepare: '準備 / ダウンロード / 読み込み',
+    foundryPrepare: 'モデルをダウンロード / 検証',
+    runtimeDownloadRestart:
+      'ダウンロードでネイティブ実行環境を使用しました。有効にする前に OpenLess を再起動してください。モデルは自動で有効になりません。今すぐ再起動しますか？',
+    restartNow: '今すぐ再起動',
     foundryPreparing: '準備中…',
     foundryReleasing: '解放中…',
     foundryRetryPrepare: '準備を続行 / 再試行',

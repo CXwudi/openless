@@ -26,7 +26,7 @@ pub(super) fn setup(config: &GeminiLiveConfig) -> Message {
         TranscriptionMode::Verbatim => "VERBATIM",
         TranscriptionMode::Smart => "SMART",
     };
-    Message::Text(
+    Message::text(
         json!({"setup": {
             "model": format!("models/{}", super::MODEL),
             "generationConfig": {"responseModalities": ["TEXT"]},
@@ -41,7 +41,7 @@ pub(super) fn setup(config: &GeminiLiveConfig) -> Message {
 
 /// Send raw canonical PCM; WAV headers are never part of the audio stream.
 pub(super) fn audio(pcm: &[u8]) -> Message {
-    Message::Text(
+    Message::text(
         json!({"realtimeInput": {"audio": {
             "data": base64::engine::general_purpose::STANDARD.encode(pcm),
             "mimeType": "audio/pcm;rate=16000"
@@ -57,7 +57,7 @@ pub(super) fn activity(start: bool) -> Message {
     } else {
         "activityEnd"
     };
-    Message::Text(json!({"realtimeInput": {field: {}}}).to_string())
+    Message::text(json!({"realtimeInput": {field: {}}}).to_string())
 }
 
 /// Google sends binary JSON; compatible gateways may send text JSON.

@@ -4,8 +4,13 @@ import { en } from './en';
 // 한국어 (Beta) — AI 기계 번역 기반. 원어민 검토를 권장합니다.
 // 구조는 zh-CN.ts 를 따릅니다. 새 key 를 추가할 때 ja.ts / ko.ts 도 동시에
 // 갱신해 주세요(갱신되지 않은 key 는 ...en 으로 영어로 fallback 됩니다).
+import { uiRefinementKo as uiRefinement } from './uiRefinement';
+import { experimentalAsrEn as experimentalAsr } from './experimentalAsr';
+
 export const ko: typeof zhCN = {
   ...en,
+  experimentalAsr,
+  uiRefinement,
   voiceEdit: {
     title: '음성 편집 세션',
     description:
@@ -154,7 +159,7 @@ export const ko: typeof zhCN = {
       '동기화 범위의 로컬 데이터를 교체합니다. 로컬 변경을 유지하려면 병합을 선택하세요.',
     restoreCheck: '복원 방식과 충돌 선택을 확인했습니다.',
     applyRestore: '복원 확인',
-    conflictProgress: '충돌 {{total}}개 중 {{selected}}개 해결',
+    conflictProgress: '충돌 {{selected}} / {{total}}개 해결',
     conflictItem: '충돌 {{index}} · {{category}}',
     conflictLocal: '로컬 유지',
     conflictCloud: '클라우드 사용',
@@ -1226,6 +1231,13 @@ export const ko: typeof zhCN = {
     cancelledTitle: '녹음이 취소됨',
   },
   settings: {
+    testingFeatures: {
+      title: '테스트 중인 기능',
+      enable: '테스트 중인 기능 활성화',
+      description:
+        '지원되는 플랫폼에서 Less Computer와 Claude 콘솔을 표시하고 설정 및 사용할 수 있습니다. 끄면 실행 중인 작업을 중지하고 항목을 숨기지만 설정은 유지됩니다. 이 기기에만 적용됩니다.',
+      unavailable: '이 플랫폼에서는 아직 사용 가능한 테스트 기능이 없습니다.',
+    },
     selectionWorkspace: {
       title: '선택 영역 도우미',
       hint: '텍스트 선택 후 같은 단축키: 음성 편집 끄면 바로 다듬기, 켜면 누른 채 말한 뒤 「질문」 또는 「편집」 선택.',
@@ -1299,6 +1311,16 @@ export const ko: typeof zhCN = {
       cursorContextLabel: '커서 문맥 (실험적)',
       cursorContextDesc:
         '다듬기 요청 시 커서 주변의 짧은 텍스트를 참고 자료로 모델에 보내 고유명사, 동음이의어, 지시어 판단에 사용합니다(macOS / Windows / Android). 받아쓰기, 빠른 메모, 클라우드 메모 모두 참고하지만 컨텍스트 자체는 메모, 기록, 로그에 저장되지 않습니다. 클라우드 모델을 사용하면 다듬기 요청과 함께 해당 제공업체로 전송됩니다. 기기 내 단어 학습과 별도 설정입니다. 비밀번호 입력란, 터미널, 알려진 민감한 앱은 제외됩니다.',
+    },
+    localMigration: {
+      title: '로컬 구성 마이그레이션',
+      description:
+        '이식 가능한 모든 로컬 구성을 버전이 지정된 번들로 내보내거나 다른 Android 기기에 복원합니다. 공유 모드는 기본적으로 비식별화되며, 개인 마이그레이션에 자격 증명을 포함하려면 비밀번호 보호가 필요합니다. 병합 또는 교체 전에 네이티브 화면에서 출처, 버전, 범주와 변경 내용을 확인할 수 있습니다.',
+      safetyNote:
+        '시스템 권한, OAuth 세션, 기기 경로와 실행 상태는 마이그레이션되지 않습니다. 가져오기 전에 로컬 백업을 만듭니다.',
+      open: '로컬 마이그레이션 열기',
+      opening: '여는 중…',
+      openFailed: '로컬 마이그레이션을 열 수 없습니다. 설정에서 다시 시도하세요.',
     },
     codingConsole: {
       title: 'Claude 콘솔',
@@ -1456,6 +1478,16 @@ export const ko: typeof zhCN = {
       capsuleTranscriptDesc:
         '오디오 막대 대신 인식된 원문을 표시합니다. 끄면 기존 표시로 돌아갑니다. 비스트리밍 인식은 결과 수신 후 표시됩니다.',
       capsuleTranscriptFontSize: '원문 글자 크기',
+      capsuleDisplayModeLabel: '다중 화면 캡슐',
+      capsuleDisplayModeDesc:
+        '녹음 캡슐을 표시할 화면을 선택합니다. 모든 화면 모드는 창과 그래픽 리소스를 더 사용합니다.',
+      capsuleDisplayCursorScreen: '마우스 포인터가 있는 화면',
+      capsuleDisplayPrimaryScreen: '주 디스플레이만',
+      capsuleDisplayForegroundWindowScreen: '전경 창이 있는 화면',
+      capsuleDisplayAllScreens: '모든 화면에 표시',
+      capsuleDisplayModeRestartTitle: '표시 모드를 적용하려면 OpenLess를 다시 시작하세요',
+      capsuleDisplayModeRestartDesc:
+        '모든 화면 표시에서 전환하려면 이전 캡슐 창을 정리하기 위해 다시 시작해야 합니다. 지금 다시 시작할까요?',
       capsuleStyleLabel: '캡슐 스타일',
       capsuleStyleSiri: '시리 광선 스타일',
       capsuleStyleClassic: 'Openless 기본 스타일',
@@ -1465,6 +1497,9 @@ export const ko: typeof zhCN = {
       lowLatencyDictationLabel: '저지연 캡처',
       lowLatencyDictationDesc:
         '마이크 스트림을 준비하고 최대 500ms를 메모리에 보관해 단축키 직후의 음성이 누락될 가능성을 줄입니다. 녹음을 확정하기 전에는 오디오를 저장하거나 업로드하지 않습니다. 전력 사용량이 늘고 마이크 표시가 계속 켜져 있습니다.',
+      audioEnhancementLabel: '가벼운 마이크 향상',
+      audioEnhancementDesc:
+        '로컬 마이크에 가벼운 소음 억제, 게인과 소프트 리미터를 적용합니다. 에코 제거는 포함하지 않으며 기본값은 꺼짐입니다.',
       muteDuringRecordingLabel: '녹음 중 음소거',
       muteDuringRecordingDesc:
         '녹음 중 시스템 출력을 일시적으로 음소거하여 스피커 에코를 방지합니다.',
@@ -1482,6 +1517,9 @@ export const ko: typeof zhCN = {
       pasteShortcutCtrlV: 'Ctrl+V (기본 / 대부분 앱)',
       pasteShortcutCtrlShiftV: 'Ctrl+Shift+V (kitty / alacritty / wezterm / 대부분 터미널)',
       pasteShortcutShiftInsert: 'Shift+Insert (xterm / urxvt)',
+      plainTextInsertionLabel: '일반 텍스트 삽입 모드',
+      plainTextInsertionDesc:
+        '켜면 모의 붙여넣기에 Ctrl+V 대신 Shift+Insert를 사용합니다(켜져 있는 동안 위 단축키는 변경할 수 없습니다). 매우 특수한 경우에만 켜세요(예: Punto Switcher 같은 키보드 레이아웃 전환 도구가 Ctrl+V를 가로챌 때). 클립보드 붙여넣기 방식에만 적용됩니다(Windows 전용).',
       comboRecordLabel: '단축키 녹화',
       comboRecordDesc:
         '클릭 후 원하는 단축키 조합(예: ⌘⇧D)을 누르세요. 토글 및 누르기 모드 모두 지원합니다.',
@@ -1530,6 +1568,9 @@ export const ko: typeof zhCN = {
         '보관 기간을 초과한 기록은 새 항목 작성 시 정리됩니다. 0 = 시간 기반 정리 비활성화.',
       historyMaxEntriesLabel: '기록 개수 상한',
       historyMaxEntriesDesc: '로컬 보관 세션 상한. 빈칸 = 200. 범위 5–200.',
+      polishSkipMaxCharsLabel: '짧은 입력은 다듬기 건너뛰기(최대 글자 수)',
+      polishSkipMaxCharsDesc:
+        '공백을 제외하고 N자 이하의 인식 결과는 LLM 호출 없이 원문 그대로 삽입합니다. 0 = 끔. 번역은 항상 다듬습니다.',
       polishContextWindowLabel: '대화 컨텍스트 윈도(분)',
       polishContextWindowDesc:
         '최근 N 분간 정리된 전사를 멀티턴 컨텍스트로 전달합니다. 0 = 비활성화.',
@@ -1691,6 +1732,9 @@ export const ko: typeof zhCN = {
         asrSherpaOnnxLocal: '로컬 sherpa-onnx(실험적)',
         asrFoundryLocalWhisper: '로컬 Whisper(Foundry Local)',
         asrLocalWhisper: '로컬 Whisper(배치)',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
+        asrExperimentalTextStream: experimentalAsr.textStreamLabel,
         asrLocalQwen3: '로컬 Qwen3-ASR',
         asrLocalQwen3Mlx: '로컬 Qwen3-ASR(MLX / Metal)',
         asrLocalQwen3C: '로컬 Qwen3-ASR(C / CPU)',
@@ -2041,11 +2085,13 @@ export const ko: typeof zhCN = {
         background: '백그라운드',
         keyboard: '키보드 표시 시',
         always: '항상',
+        never: '표시 안 함',
       },
       androidOverlayTriggerHint: {
         background: '단순',
         keyboard: '이 모드는 보류되었습니다. 기존 설정은 백그라운드로 되돌립니다.',
         always: '항상 표시',
+        never: '자동으로 표시되지 않으며 키보드는 계속 사용할 수 있습니다.',
       },
       androidOverlayTriggerDisabled: {
         keyboard: '키보드 표시 감지는 보류되었습니다. 이후 오버레이 제스처로 대체합니다.',
@@ -2115,6 +2161,9 @@ export const ko: typeof zhCN = {
       streamingInsertHintWindows: 'SendInput Unicode 로 TSF / IME 를 우회. 입력 소스 전환 불필요.',
       streamingInsertHintLinux:
         'fcitx5 플러그인으로 텍스트 전송. 스트리밍 입력은 enigo + XTest 키 합성 사용.',
+      windowsCompositionInputLabel: '실시간 원문을 입력창에 표시 (Windows)',
+      windowsCompositionInputDesc:
+        '녹음 중 인식된 텍스트를 밑줄이 그어진 조합 텍스트로 입력창에 표시하고, 완료되면 최종 결과로 바꿉니다. OpenLess TSF 입력 구성 요소와 TSF를 지원하는 앱이 필요합니다.',
       streamingInsertSaveClipboardLabel: '클립보드에 저장',
       streamingInsertSaveClipboardHint:
         '삽입 성공 후 최종 텍스트를 클립보드에 기록하여 Cmd+V 로 다시 붙여넣을 수 있게 합니다. 끄면 클립보드를 건드리지 않습니다.',
@@ -2122,6 +2171,9 @@ export const ko: typeof zhCN = {
       localAsrDesc:
         '전사를 클라우드에서 로컬 추론으로 전환합니다. 오프라인 / 프라이버시용에만 권장됩니다.',
       localAsrWarningShort: '로컬 추론은 느리며, 사양 부족 시 글자 누락이 발생할 수 있습니다.',
+      localAsrFallbackLabel: '클라우드 인식이 실패하면 로컬 모델 사용',
+      localAsrFallbackDesc:
+        '네트워크가 불안정하거나 오프라인일 때 클라우드 재시도를 기다리지 않고 다운로드한 로컬 모델로 녹음을 인식합니다. 로컬 모델을 먼저 다운로드해야 합니다.',
       qwen3Desc: '활성화하면 ASR 프로바이더가 인수됩니다.',
       sherpaDesc: '활성화하면 ASR 프로바이더가 인수됩니다.',
       foundryDesc: '활성화하면 ASR 프로바이더가 인수됩니다.',
@@ -2315,7 +2367,11 @@ export const ko: typeof zhCN = {
     noResults: '일치하는 카테고리가 없습니다. “마이크”, “모델” 또는 “테마”를 검색해 보세요.',
     autoSaveHint: '변경 사항이 자동 저장됩니다',
     backToAdvanced: '실험 및 확장으로 돌아가기',
+    backToTestingFeatures: '테스트 중인 기능으로 돌아가기',
     advancedPages: {
+      customSyncServer: '자체 호스팅 서비스 전용입니다. 공식 동기화는 설정이 필요하지 않습니다.',
+      localModels: experimentalAsr.description,
+      testingFeatures: '필요할 때 테스트 중인 기능을 활성화합니다.',
       vocabularyLearning:
         '음성 입력 후 수동 수정으로 학습하고 관찰 시간, 확인 시간, 글자 수를 설정합니다.',
       lessComputer: 'Agent를 선택하고 모델, 권한, 작업 디렉터리를 설정합니다.',
@@ -2330,7 +2386,7 @@ export const ko: typeof zhCN = {
       services: '음성 인식과 텍스트 처리 서비스, 채널, 로컬 모델 및 연결을 관리합니다.',
       appearance: '테마, 페이지 배치, 인터페이스 언어를 편하게 읽도록 조정합니다.',
       privacy: '시스템 권한과 연결을 확인하고 기록, 녹음 및 로컬 데이터를 관리합니다.',
-      advanced: '필요에 따라 Less Computer와 디버깅을 설정합니다.',
+      advanced: '테스트 기능, 어휘 학습 및 디버깅 도구를 설정합니다.',
       about: '현재 버전, 업데이트 채널 및 자동 업데이트 설정을 확인합니다.',
     },
     searchKeywords: {
@@ -2478,7 +2534,10 @@ export const ko: typeof zhCN = {
     foundryError: 'Foundry 상태',
     foundrySetDefault: '기본값으로 설정 / Windows 로컬 ASR 활성화',
     foundryEnabling: '활성화 중…',
-    foundryPrepare: '준비 / 다운로드 / 로드',
+    foundryPrepare: '모델 다운로드 / 확인',
+    runtimeDownloadRestart:
+      '다운로드 중 네이티브 런타임을 사용했습니다. 모델을 활성화하기 전에 OpenLess를 다시 시작하세요. 모델은 자동으로 활성화되지 않습니다. 지금 다시 시작할까요?',
+    restartNow: '지금 다시 시작',
     foundryPreparing: '준비 중…',
     foundryReleasing: '해제 중…',
     foundryRetryPrepare: '준비 계속 / 다시 시도',

@@ -12,6 +12,7 @@ pub mod audio;
 pub mod auxiliary;
 pub mod cli;
 mod cloud_providers;
+pub use cloud_providers::parse_temperature;
 pub mod cloud_sync;
 pub mod cloud_sync_e2ee;
 pub mod cloud_sync_e2ee_documents;
@@ -33,6 +34,7 @@ pub mod edit_plan;
 pub mod endpoint_security;
 pub mod errors;
 pub mod events;
+pub mod experimental_asr;
 pub mod external_audio;
 pub mod history;
 pub mod host_document;
@@ -41,6 +43,7 @@ pub mod language_catalog;
 mod less_computer;
 pub mod llm_gemini;
 pub mod llm_protocol;
+pub mod local_migration_bundle;
 mod marketplace;
 pub mod model_store;
 pub mod net;
@@ -213,12 +216,15 @@ pub mod contract {
 
 pub use activity::{ActivityDay, ActivityStore, DayStats};
 pub use api::{
-    BackendRepositories, BackendSnapshot, CliDispatchOutcome, DictationHotkeyDispatchOptions,
+    AsrRoute, AsrUsage, BackendRepositories, BackendSnapshot, CliDispatchOutcome, DictationHotkeyDispatchOptions,
     DictationHotkeyEdge, LessComputerHotkeyAction, LessComputerVoiceFinish,
     LessComputerVoiceOptions, LessComputerVoiceSession, OpenLessBackend, QaVoiceCaptureResult,
     QaVoiceCaptureSession, StartupSnapshot, VoiceTranscriptionSession,
 };
-pub use audio::{encode_dictation_wav, NormalizedPcmChunk, PcmNormalizer, DICTATION_SAMPLE_RATE};
+pub use audio::{
+    encode_dictation_wav, AudioEnhancer, AudioProcessingConfig, AudioProcessor, NormalizedPcmChunk,
+    PcmNormalizer, DICTATION_SAMPLE_RATE,
+};
 pub use auxiliary::{
     AsrCallLabel, AuxiliaryApi, RepolishRequest, RetranscriptionFailure, RetranscriptionResult,
 };
@@ -327,9 +333,9 @@ pub use remote_input_service::{
 pub use selection_voice_intent::SelectionVoiceIntent;
 pub use settings::*;
 pub use shared_types::{
-    CapsulePayload, CapsuleState, CapsuleStyle, CredentialsStatus, HotkeyMode, HotkeyStatus,
-    PendingCorrection, PlatformCapabilities, SelectionPolishOutputMode, UserPreferences,
-    LOCAL_ASR_KEEP_LOADED_FOREVER_SECS,
+    CapsuleDisplayMode, CapsulePayload, CapsuleState, CapsuleStyle, CredentialsStatus, HotkeyMode,
+    HotkeyStatus, PendingCorrection, PlatformCapabilities, SelectionPolishOutputMode,
+    UserPreferences, LOCAL_ASR_KEEP_LOADED_FOREVER_SECS,
 };
 pub use shortcut_types::{
     binding_from_legacy_trigger, binding_requires_mouse_hook, binding_requires_side_aware_hook,
@@ -376,4 +382,6 @@ pub use voice_edit_session::{
     VoiceEditSession, VoiceEditSnapshot, VoiceEditTarget, VoiceEditTurn,
 };
 
+pub mod ime_cloud;
+pub mod ime_dictionary;
 pub mod preference_patch;

@@ -214,7 +214,7 @@ async fn cancelling_an_idle_writer_prevents_later_preview_delivery() {
         .await;
         cancellation_received.await.unwrap();
         // The peer may have already closed; either outcome must suppress this preview.
-        let _ = socket.send(Message::Text(json!({"serverContent": {
+        let _ = socket.send(Message::text(json!({"serverContent": {
             "interimInputTranscription": {"text": "After cancellation"}
         }}).to_string())).await;
         assert_closed(&mut socket).await;

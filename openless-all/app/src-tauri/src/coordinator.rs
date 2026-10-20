@@ -684,6 +684,14 @@ impl Coordinator {
             );
 
             let app = crate::core_adapters::app_handle_slot();
+            // arm64 Android links sherpa-onnx (build.rs `local_asr_sherpa`) and
+            // gets the same runtime pair Windows builds in new_with_local_runtimes().
+            #[cfg(local_asr_sherpa)]
+            let native_asr = crate::core_adapters::TauriNativeAsrDependencies::new(
+                Arc::new(crate::asr::local::FoundryLocalRuntime::new()),
+                Arc::new(crate::asr::local::SherpaOnnxRuntime::new()),
+            );
+            #[cfg(not(local_asr_sherpa))]
             let native_asr = crate::core_adapters::TauriNativeAsrDependencies::new();
             let hotkey_status = Arc::new(Mutex::new(HotkeyStatus::default()));
             let qa_context = Arc::new(TauriQaHostContext::default());
@@ -701,7 +709,10 @@ impl Coordinator {
                 startup_error,
             );
 
-            let host = crate::tauri_coordinator_host::TauriCoordinatorHost::new(Arc::clone(&app));
+            let host = crate::tauri_coordinator_host::TauriCoordinatorHost::new(
+                Arc::clone(&app),
+                Arc::clone(&qa_context),
+            );
             let hotkey_runtime_target = (&backend.get_preferences()).into();
             let inner = Arc::new(Inner {
                 host,
@@ -834,7 +845,10 @@ impl Coordinator {
             startup_error,
         );
 
-        let host = crate::tauri_coordinator_host::TauriCoordinatorHost::new(Arc::clone(&app));
+        let host = crate::tauri_coordinator_host::TauriCoordinatorHost::new(
+            Arc::clone(&app),
+            Arc::clone(&qa_context),
+        );
         let hotkey_runtime_target = (&backend.get_preferences()).into();
         let inner = Arc::new(Inner {
             host,
@@ -1062,8 +1076,11 @@ impl Coordinator {
                     AndroidOverlayTrigger::Background => "background",
                     AndroidOverlayTrigger::Keyboard => "keyboard",
                     AndroidOverlayTrigger::Always => "always",
+                    AndroidOverlayTrigger::Never => "never",
                 }
             }
+            let from = from.normalized();
+            let to = to.normalized();
             if from == to {
                 return;
             }
@@ -1072,20 +1089,15 @@ impl Coordinator {
                 overlay_trigger_log_name(from),
                 overlay_trigger_log_name(to),
             );
-            match (from, to) {
-                (
-                    AndroidOverlayTrigger::Background | AndroidOverlayTrigger::Keyboard,
-                    AndroidOverlayTrigger::Always,
-                ) => {
+            match to {
+                AndroidOverlayTrigger::Always => {
                     let _ = crate::android::replace_android_overlay();
                 }
-                (
-                    AndroidOverlayTrigger::Always,
-                    AndroidOverlayTrigger::Background | AndroidOverlayTrigger::Keyboard,
-                ) => {
+                AndroidOverlayTrigger::Background
+                | AndroidOverlayTrigger::Keyboard
+                | AndroidOverlayTrigger::Never => {
                     let _ = crate::android::hide_android_overlay();
                 }
-                _ => {}
             }
         }
         let _ = (from, to);
@@ -1099,7 +1111,9 @@ impl Coordinator {
                 AndroidOverlayTrigger::Always => {
                     let _ = crate::android::replace_android_overlay();
                 }
-                AndroidOverlayTrigger::Background | AndroidOverlayTrigger::Keyboard => {
+                AndroidOverlayTrigger::Background
+                | AndroidOverlayTrigger::Keyboard
+                | AndroidOverlayTrigger::Never => {
                     let _ = crate::android::hide_android_overlay();
                 }
             }
@@ -1451,7 +1465,8 @@ impl Coordinator {
 
     pub(crate) fn try_update_translation_hotkey_binding(&self) -> Result<(), String> {
         let target = hotkey_runtime_target(&self.inner);
-        if is_builtin_translation_shift(&target.translation)
+        if is_unconfigured_shortcut(&target.translation)
+            || is_builtin_translation_shift(&target.translation)
             || crate::shortcut_binding::legacy_modifier_trigger(&target.translation).is_some()
         {
             take_translation_hotkey_on_main_thread(&self.inner);
@@ -1544,9 +1559,13 @@ impl Coordinator {
     /// After saving, syncs style, window size, and click region without
     /// waiting for the next recording state event.
     pub fn sync_capsule_style_from_preferences(&self) {
+        let preferences = self.inner.backend.get_preferences();
         self.inner
             .host
-            .cache_capsule_style(self.inner.backend.get_preferences().capsule_style);
+            .cache_capsule_display_mode(preferences.capsule_display_mode);
+        self.inner
+            .host
+            .cache_capsule_style(preferences.capsule_style);
     }
     /// Apply only the Tauri presentation side of the Core-owned vocabulary
     /// suggestion state. Commands mutate the Core collection first, then pass

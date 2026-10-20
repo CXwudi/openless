@@ -1,7 +1,12 @@
 import type { zhCN } from './zh-CN';
 
 // Traditional Chinese resources, sharing the same copy keys as the other seven locales.
+import { uiRefinementZhTW as uiRefinement } from './uiRefinement';
+import { experimentalAsrZhTW as experimentalAsr } from './experimentalAsr';
+
 export const zhTW: typeof zhCN = {
+  experimentalAsr,
+  uiRefinement,
   voiceEdit: {
     title: '語音編輯工作階段',
     description: '口述草稿或讀取目標文字，再以多輪語音指令修改，確認後寫回輸入欄位。',
@@ -1194,6 +1199,13 @@ export const zhTW: typeof zhCN = {
     cancelledTitle: '已取消錄音',
   },
   settings: {
+    testingFeatures: {
+      title: '正在測試中的功能',
+      enable: '啟用正在測試中的功能',
+      description:
+        '開啟後顯示 Less Computer 和 Claude 控制台，可在支援的平台設定和使用。關閉會停止執行並隱藏入口，保留既有設定。僅在目前裝置生效。',
+      unavailable: '目前平台暫無可用的測試功能。',
+    },
     selectionWorkspace: {
       title: '選區助手',
       hint: '選中文字後按同一快捷鍵：關閉語音編輯時直接潤色；開啟後口述指令，說完再選擇「提問」或「編輯選區」。',
@@ -1263,6 +1275,16 @@ export const zhTW: typeof zhCN = {
       cursorContextLabel: '遊標上下文（實驗）',
       cursorContextDesc:
         '潤色時把游標附近的一小段文字傳給模型作參考，用於專有詞、同音詞和指代的判斷（macOS / Windows / Android）。聽寫、速記和雲筆記都會參考，但上下文本身不會寫入筆記、歷史或日誌；使用雲端模型時會隨本次潤色請求傳送給該模型服務。此開關與本機手改學詞獨立；排除密碼欄位、終端機及已知敏感應用程式。',
+    },
+    localMigration: {
+      title: '本機設定遷移',
+      description:
+        '將所有可遷移的本機設定匯出為帶版本的遷移檔案，或在另一部 Android 裝置上還原。分享模式預設會去識別化；個人遷移只有在密碼保護下才能攜帶憑證。原生流程會在合併或取代前顯示來源、版本、類別與變更摘要。',
+      safetyNote:
+        '系統權限、OAuth 工作階段、裝置路徑與執行狀態不會遷移。匯入前會自動建立本機備份。',
+      open: '開啟本機遷移',
+      opening: '正在開啟…',
+      openFailed: '無法開啟本機遷移流程，請從設定頁重試。',
     },
     codingConsole: {
       title: 'Claude 主控臺',
@@ -1410,6 +1432,15 @@ export const zhTW: typeof zhCN = {
       capsuleTranscriptDesc:
         '在膠囊中顯示語音辨識原文，取代音訊條；關閉後恢復原有顯示。非串流辨識將於結果傳回後顯示。',
       capsuleTranscriptFontSize: '原文字級',
+      capsuleDisplayModeLabel: '多螢幕膠囊',
+      capsuleDisplayModeDesc: '選擇錄音膠囊顯示在哪些螢幕。所有螢幕模式會增加視窗與圖形資源用量。',
+      capsuleDisplayCursorScreen: '滑鼠所在螢幕',
+      capsuleDisplayPrimaryScreen: '僅主螢幕',
+      capsuleDisplayForegroundWindowScreen: '目前前景視窗所在螢幕',
+      capsuleDisplayAllScreens: '所有螢幕顯示',
+      capsuleDisplayModeRestartTitle: '重新啟動 OpenLess 以套用顯示模式',
+      capsuleDisplayModeRestartDesc:
+        '從所有螢幕顯示切換需要重新啟動軟體，才能清理先前的膠囊視窗。現在重新啟動嗎？',
       capsuleStyleLabel: '膠囊樣式',
       capsuleStyleSiri: '流光 Siri 風格',
       capsuleStyleClassic: 'Openless 預設風格',
@@ -1419,6 +1450,8 @@ export const zhTW: typeof zhCN = {
       lowLatencyDictationLabel: '低延遲錄音',
       lowLatencyDictationDesc:
         '保持麥克風串流就緒，並在記憶體中保留最多 500 毫秒音訊，減少按下熱鍵後第一句話被漏辨識的情況。確認錄音前不會儲存或上傳音訊；此模式會增加耗電並保持系統麥克風指示燈亮起。',
+      audioEnhancementLabel: '輕量麥克風增強',
+      audioEnhancementDesc: '對本機麥克風套用輕量降噪、增益與軟限幅，不包含回聲消除。預設關閉。',
       muteDuringRecordingLabel: '錄音時靜音',
       muteDuringRecordingDesc: '錄音期間臨時靜音系統輸出，避免揚聲器迴音。',
       audioCueLabel: '錄音提示音',
@@ -1433,6 +1466,9 @@ export const zhTW: typeof zhCN = {
       pasteShortcutCtrlV: 'Ctrl+V（預設 / 多數應用）',
       pasteShortcutCtrlShiftV: 'Ctrl+Shift+V（kitty / alacritty / wezterm / 多數終端）',
       pasteShortcutShiftInsert: 'Shift+Insert（xterm / urxvt）',
+      plainTextInsertionLabel: '純文字插入模式',
+      plainTextInsertionDesc:
+        '開啟後，模擬貼上改用 Shift+Insert 取代 Ctrl+V（開啟期間上方快捷鍵選項不可更改）。僅在極為特殊的情況下才開啟，例如 Ctrl+V 被鍵盤配置切換工具（如 Punto Switcher）攔截時。僅對「剪貼簿貼上」插入方式生效（僅 Windows）。',
       comboRecordLabel: '錄製快捷鍵',
       comboRecordDesc: '點選後按下你想要的快捷鍵組合（如 ⌘⇧D），支援 Toggle 與 Hold 模式。',
       comboRecordBtn: '錄製快捷鍵',
@@ -1478,6 +1514,9 @@ export const zhTW: typeof zhCN = {
       historyRetentionDesc: '超過保留天數的歷史在寫入新條目時被清理；0 = 不按時間清理。',
       historyMaxEntriesLabel: '歷史條數上限',
       historyMaxEntriesDesc: '本地保留會話上限，留空 = 200。範圍 5–200。',
+      polishSkipMaxCharsLabel: '短句跳過潤色（最大字數）',
+      polishSkipMaxCharsDesc:
+        '轉寫不超過 N 個字（不計空白）時直接插入原文，不呼叫潤色模型。0 = 關閉。翻譯模式始終潤色。',
       polishContextWindowLabel: '對話上下文視窗（分鐘）',
       polishContextWindowDesc: '把最近 N 分鐘內已潤色的轉寫作為多輪上下文，0 = 關閉。',
       recordAudioForDebugLabel: '保留原始錄音（除錯）',
@@ -1631,6 +1670,9 @@ export const zhTW: typeof zhCN = {
         asrSherpaOnnxLocal: '本地 sherpa-onnx（實驗性）',
         asrFoundryLocalWhisper: '本地 Whisper（Foundry Local）',
         asrLocalWhisper: '本地 Whisper（批次解碼）',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
+        asrExperimentalTextStream: experimentalAsr.textStreamLabel,
         asrLocalQwen3: '本地 Qwen3-ASR',
         asrLocalQwen3Mlx: '本地 Qwen3-ASR（MLX / Metal）',
         asrLocalQwen3C: '本地 Qwen3-ASR（C / CPU）',
@@ -1959,11 +2001,13 @@ export const zhTW: typeof zhCN = {
         background: '退到背景',
         keyboard: '鍵盤彈出時',
         always: '常駐',
+        never: '永不顯示',
       },
       androidOverlayTriggerHint: {
         background: '省電',
         keyboard: '此模式已暫緩，既有設定會改回退到背景。',
         always: '一直佔屏',
+        never: '不會自動出現，鍵盤仍可正常使用。',
       },
       androidOverlayTriggerDisabled: {
         keyboard: '「鍵盤彈出時」暫緩開放，後續將以懸浮窗手勢取代鍵盤偵測。',
@@ -2036,12 +2080,18 @@ export const zhTW: typeof zhCN = {
       streamingInsertHintMac: '臨時切到 ABC 輸入源，避免 CJK IME 攔截，會話結束後自動切回。',
       streamingInsertHintWindows: 'SendInput Unicode 直接送字元，繞過 TSF / IME，不切輸入法。',
       streamingInsertHintLinux: '透過 fcitx5 外掛提交文字；串流輸入使用 enigo + XTest 合成按鍵。',
+      windowsCompositionInputLabel: '即時原文顯示在輸入框（Windows）',
+      windowsCompositionInputDesc:
+        '錄音時把辨識到的文字以帶底線的組合文字顯示在輸入框中，結束後替換為最終結果。需要啟用 OpenLess 的 TSF 輸入法元件，且目標應用支援文字服務框架（TSF）。',
       streamingInsertSaveClipboardLabel: '同步到剪貼簿',
       streamingInsertSaveClipboardHint:
         '插入成功後把最終文字寫入剪貼簿，方便 Cmd+V 再次貼上；關閉後流式過程不動剪貼簿。',
       localAsrTitle: '本地 ASR 模型',
       localAsrDesc: '把轉寫從雲端切到本機推理。僅推薦離線 / 隱私敏感場景。',
       localAsrWarningShort: '本地推理較慢，配置不足時可能吞字。',
+      localAsrFallbackLabel: '雲端辨識失敗時改用本機模型',
+      localAsrFallbackDesc:
+        '網路不佳或沒有網路時，用已下載的本機模型辨識錄音，不再等待雲端重試。需要先下載本機模型。',
       qwen3Desc: '啟動之後，ASR 提供商將被接管。',
       sherpaDesc: '啟用後，ASR 提供商將被接管。',
       foundryDesc: '啟動之後，ASR 提供商將被接管。',
@@ -2230,7 +2280,11 @@ export const zhTW: typeof zhCN = {
     noResults: '找不到相關分類。試試「麥克風」「模型」或「主題」。',
     autoSaveHint: '修改後自動儲存',
     backToAdvanced: '返回實驗與擴充',
+    backToTestingFeatures: '返回正在測試中的功能',
     advancedPages: {
+      customSyncServer: '僅供自建服務使用；預設使用官方同步，無須設定。',
+      localModels: experimentalAsr.description,
+      testingFeatures: '依需要開啟尚在測試中的功能。',
       vocabularyLearning: '從聽寫後的手動改詞中學習，設定觀察時長、確認時間和詞長。',
       lessComputer: '選擇 Agent，設定模型、權限與工作目錄。',
       claudeConsole: '偵測 Claude Code，並查看測試工作的執行輸出。',
@@ -2240,11 +2294,11 @@ export const zhTW: typeof zhCN = {
     descriptions: {
       general: '選擇麥克風、設定錄音方式與文字輸入，也可連接手機輸入。',
       inputMethod: '設定 Android 懸浮窗與輸入法，快速開始手機端輸入。',
-      shortcuts: '設定各功能的觸發方式，以及選取文字後的操作。',
+      shortcuts: '搜尋、分類與自訂各功能的快捷鍵。',
       services: '選擇語音辨識與文字處理服務，管理管道、本機模型和網路連線。',
       appearance: '調整主題、頁面排版和介面語言，讓閱讀更舒服。',
       privacy: '檢查系統權限與連線狀態，管理歷史、錄音和本機資料。',
-      advanced: '按需設定 Less Computer 與除錯功能。',
+      advanced: '設定測試功能、手改學詞與除錯工具。',
       about: '查看目前版本、更新管道與自動更新設定。',
     },
     searchKeywords: {
@@ -2259,7 +2313,7 @@ export const zhTW: typeof zhCN = {
     },
     sections: {
       appearance: '外觀與語言',
-      shortcuts: '快捷鍵與選取文字',
+      shortcuts: '快捷鍵',
       general: '通用',
       inputMethod: '輸入方式',
       services: '服務',
@@ -2384,7 +2438,10 @@ export const zhTW: typeof zhCN = {
     foundryError: 'Foundry 狀態',
     foundrySetDefault: '設為預設 / 啟用 Windows 本地 ASR',
     foundryEnabling: '正在啟用…',
-    foundryPrepare: '準備 / 下載 / 載入',
+    foundryPrepare: '下載 / 驗證模型',
+    runtimeDownloadRestart:
+      '下載操作使用了本機執行元件。請重新啟動 OpenLess 後再啟用；模型不會自動啟用。現在重新啟動？',
+    restartNow: '立即重新啟動',
     foundryPreparing: '正在準備…',
     foundryReleasing: '正在釋放…',
     foundryRetryPrepare: '繼續準備 / 重試',

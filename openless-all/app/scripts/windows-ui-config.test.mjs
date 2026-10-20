@@ -48,6 +48,11 @@ const tauriEventsRs = await readFile(
   new URL('../src-tauri/src/tauri_events.rs', import.meta.url),
   'utf-8',
 );
+assertMatch(
+  coordinatorRs,
+  /fn prepare_display_target[\s\S]*?\.then\(\|\| self\.qa_context\.external_focus_target\(\)\)[\s\S]*?\.or_else\(crate::coordinator::capture_focus_target\)/,
+  'foreground display targeting must retain QA provenance and accept OpenLess foreground windows',
+);
 const capsuleTsx = await readFile(
   new URL('../src/components/Capsule.tsx', import.meta.url),
   'utf-8',
@@ -167,7 +172,7 @@ assertMatch(
 
 const tokensCss = await readFile(new URL('../src/styles/tokens.css', import.meta.url), 'utf-8');
 
-if (!/os === 'win' \|\| os === 'android' \? 0 : 14/.test(windowChromeTsx)) {
+if (!/os === 'win' \|\| os === 'android'(?: \|\| os === 'harmony')? \? 0 : 14/.test(windowChromeTsx)) {
   throw new Error(
     'windows main shell should rely on native decorations instead of a frameless chrome shell',
   );
@@ -348,7 +353,7 @@ if (
 }
 assertMatch(
   capsuleTsx,
-  /p\.state === 'idle'\s*\|\|\s*p\.state === 'done'\s*\|\|\s*p\.state === 'cancelled'\s*\|\|\s*p\.state === 'error'[\s\S]*?setLocalAsrText\(''\)/,
+  /p\.state === 'idle'\s*\|\|\s*p\.state === 'done'\s*\|\|\s*p\.state === 'cancelled'\s*\|\|\s*p\.state === 'error'[\s\S]*?clearTranscriptText\(nextTranscript\)[\s\S]*?setLocalAsrText\(nextTranscript\.text\)/,
   'terminal capsule states should clear the transcript visibility source',
 );
 if (capsuleTsx.slice(conditionalReturn).includes('useEffect(')) {
@@ -477,8 +482,13 @@ assertMatch(
 );
 assertMatch(
   coordinatorRs,
-  /set_ignore_cursor_events\(true\)[\s\S]*?set_size\([\s\S]*?set_position\([\s\S]*?show_capsule_window_for_recording\(&self\.app, &rail, false\)/,
+  /set_ignore_cursor_events\(true\)[\s\S]*?set_size\([\s\S]*?set_position\([\s\S]*?show_capsule_window_for_recording\(app, rail, false\)/,
   'transcript rail should be positioned as its own click-through window',
+);
+assertMatch(
+  coordinatorRs,
+  /existing_mirror_labels\(&app, prefix\)[\s\S]*?emit_to\(label\.as_str\(\), "capsule:state"/,
+  'capsule state events should reach every per-monitor capsule and rail mirror (issue #1057)',
 );
 assertMatch(
   coordinatorRs,
@@ -502,7 +512,7 @@ assertMatch(
 );
 assertMatch(
   coordinatorRs,
-  /if let Err\(error\) = unsafe \{[\s\S]*?SetWindowPos\([\s\S]*?return false/,
+  /fn set_capsule_window_topmost_no_activate[\s\S]*?let position_result = if show[\s\S]*?SetWindowPos\([\s\S]*?if let Err\(error\) = position_result[\s\S]*?return false/,
   'no-activate display should return false when SetWindowPos fails',
 );
 assertMatch(

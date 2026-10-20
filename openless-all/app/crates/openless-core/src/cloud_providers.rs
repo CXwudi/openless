@@ -417,6 +417,61 @@ where
     }
 }
 
+async fn read_asr_channel_credentials(
+    credentials: &dyn CredentialStore,
+    channel_id: &str,
+) -> Result<HashMap<&'static str, Option<String>>, BackendError> {
+    let mut values = HashMap::new();
+    for account in ASR_SNAPSHOT_ACCOUNTS {
+        values.insert(
+            *account,
+            read_channel_credential(credentials, CredentialNamespace::Asr, channel_id, account)
+                .await?,
+        );
+    }
+    Ok(values)
+}
+
+pub(crate) async fn asr_channel_configured(
+    credentials: &dyn CredentialStore,
+    asr: &crate::dictation_context::ProviderInvocation,
+) -> Result<bool, BackendError> {
+    let values = read_asr_channel_credentials(credentials, &asr.provider_id).await?;
+    let value = |account: &str| {
+        values
+            .get(account)
+            .and_then(|value| value.as_deref())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    };
+    let configuration = crate::provider_rules::CredentialConfiguration {
+        asr_api_key: value(ASR_API_KEY_ACCOUNT).is_some(),
+        asr_endpoint: value(ASR_ENDPOINT_ACCOUNT).is_some(),
+        asr_model: asr
+            .model
+            .as_deref()
+            .is_some_and(|model| !model.trim().is_empty())
+            || value(ASR_MODEL_ACCOUNT).is_some(),
+        volcengine_service: value(crate::credentials::VOLCENGINE_SERVICE_ACCOUNT)
+            .map(str::to_string),
+        volcengine_auth_mode: value(VOLCENGINE_AUTH_MODE_ACCOUNT).map(str::to_string),
+        volcengine_app_key: value(VOLCENGINE_APP_KEY_ACCOUNT).is_some(),
+        volcengine_access_key: value(VOLCENGINE_ACCESS_KEY_ACCOUNT).is_some(),
+        volcengine_api_key: value(VOLCENGINE_API_KEY_ACCOUNT).is_some(),
+        xfyun_app_id: value(XFYUN_APP_ID_ACCOUNT).is_some(),
+        xfyun_api_key: value(XFYUN_API_KEY_ACCOUNT).is_some(),
+        tencent_cloud_app_id: value(TENCENT_CLOUD_APP_ID_ACCOUNT).is_some(),
+        tencent_cloud_secret_id: value(TENCENT_CLOUD_SECRET_ID_ACCOUNT).is_some(),
+        tencent_cloud_secret_key: value(TENCENT_CLOUD_SECRET_KEY_ACCOUNT).is_some(),
+        ..Default::default()
+    };
+    Ok(crate::provider_rules::asr_configured(
+        &asr.provider_type,
+        &configuration,
+        None,
+    ))
+}
+
 async fn prepare_cloud_transcription(
     credentials: &dyn CredentialStore,
     context: Arc<DictationContext>,
@@ -437,14 +492,7 @@ async fn prepare_cloud_transcription(
             "shared cloud ASR provider is not supported",
         ));
     }
-    let mut values = HashMap::new();
-    for account in ASR_SNAPSHOT_ACCOUNTS {
-        values.insert(
-            *account,
-            read_channel_credential(credentials, CredentialNamespace::Asr, &channel_id, account)
-                .await?,
-        );
-    }
+    let values = read_asr_channel_credentials(credentials, &channel_id).await?;
     let value = |account: &str| values.get(account).cloned().flatten();
     let model = context
         .asr
@@ -1046,8 +1094,14 @@ impl TextPolisher for SharedCloudTextPolisher {
                     "polish input must not be empty",
                 ));
             }
-            let provider =
+            let mut provider =
                 build_cloud_polisher_provider(credentials.as_ref(), context.as_ref()).await?;
+            if let CloudPolisherProvider::OpenAi(crate::polish::ActiveLLMProvider::OpenAI(
+                provider,
+            )) = &mut provider
+            {
+                provider.set_dictation_session(session_id);
+            }
             tokio::select! {
                 _ = cancellation.cancelled() => Err(cancelled_provider_error()),
                 result = run_cloud_polish(
@@ -1255,7 +1309,7 @@ async fn run_cloud_polish(
     if let Some(error) = stream.take_error() {
         return Err(error);
     }
-    let polished = result.map_err(map_llm_error)?;
+    let polished = result.map_err(map_polish_error)?;
     if cancellation.is_cancelled() {
         return Err(cancelled_provider_error());
     }
@@ -1311,7 +1365,7 @@ async fn run_cloud_polish(
                 if let Some(error) = stream.take_error() {
                     return Err(error);
                 }
-                let text = result.map_err(map_llm_error)?;
+                let text = result.map_err(map_polish_error)?;
                 PolishOutput::text(text.trim().to_owned())
             }
         }
@@ -1329,6 +1383,65 @@ async fn run_cloud_polish(
     }
     output.llm_call_label = Some(call_label);
     Ok(output)
+}
+
+/// Whether the LLM channel a session would polish through is configured enough
+/// to send a request (issue #1032). Mirrors the checks in
+/// `build_cloud_polisher_provider` without constructing a provider. A failed
+/// credential read counts as configured so the existing error path still runs.
+pub(crate) async fn llm_channel_configured(
+    credentials: &dyn CredentialStore,
+    channel_id: &str,
+    provider_type: &str,
+    model: Option<&str>,
+) -> bool {
+    let channel_id = channel_id.trim();
+    let provider_type = provider_type.trim();
+    if channel_id.is_empty() || provider_type.is_empty() {
+        return false;
+    }
+    let has_model = model.map(str::trim).is_some_and(|value| !value.is_empty())
+        || default_llm_model(provider_type).is_some();
+    if !has_model {
+        return false;
+    }
+    if provider_type == crate::polish::CODEX_OAUTH_PROVIDER_ID {
+        return true;
+    }
+    let Ok(api_key) = read_channel_credential(
+        credentials,
+        CredentialNamespace::Llm,
+        channel_id,
+        LLM_API_KEY_ACCOUNT,
+    )
+    .await
+    else {
+        return true;
+    };
+    let Ok(endpoint) = read_channel_credential(
+        credentials,
+        CredentialNamespace::Llm,
+        channel_id,
+        LLM_ENDPOINT_ACCOUNT,
+    )
+    .await
+    else {
+        return true;
+    };
+    let api_key_blank = api_key.is_none_or(|value| value.trim().is_empty());
+    if api_key_blank
+        && crate::provider_rules::api_key_required(
+            crate::ProviderKind::Llm,
+            provider_type,
+            endpoint.as_deref(),
+        )
+    {
+        return false;
+    }
+    endpoint
+        .and_then(non_blank_owned)
+        .or_else(|| default_llm_endpoint(provider_type).map(str::to_string))
+        .is_some()
 }
 
 async fn build_cloud_polisher_provider(
@@ -1446,7 +1559,7 @@ async fn build_cloud_polisher_provider(
     ))
 }
 
-fn parse_temperature(value: &str) -> Result<Option<f32>, BackendError> {
+pub fn parse_temperature(value: &str) -> Result<Option<f32>, BackendError> {
     let value = value.trim();
     if value.is_empty() {
         return Ok(None);
@@ -1475,6 +1588,18 @@ fn map_llm_error(error: impl std::fmt::Display) -> BackendError {
         BackendErrorCode::Provider,
         format!("LLM provider failed: {error}"),
     )
+}
+
+/// A polish failure, marked retryable when the network never answered
+/// (connection failure or timeout) — unlike a rejected key, exhausted quota or
+/// malformed reply. The dictation pipeline uses it to tell "offline" apart
+/// when the transcript came from a local model.
+fn map_polish_error(error: crate::polish::LLMError) -> BackendError {
+    let transient = matches!(
+        error,
+        crate::polish::LLMError::Network(_) | crate::polish::LLMError::Timeout
+    );
+    map_llm_error(error).retryable(transient)
 }
 
 pub struct SharedAuxiliaryTextPolisher {
@@ -2886,6 +3011,7 @@ mod tests {
         context.polish.translation_target_language = "English".into();
         let sink = Arc::new(ObservedTranslationStream::new());
         let session_id = SessionId::new();
+        crate::testing::logging::start();
         let run = polisher.polish(
             session_id,
             Arc::new(context),
@@ -2964,6 +3090,34 @@ mod tests {
                     },
                 ]
             );
+        }
+        if !gemini {
+            let logs = crate::testing::logging::matching(&format!("session_id={session_id} "));
+            let requests: Vec<_> = logs
+                .iter()
+                .filter(|line| line.contains("request_id="))
+                .collect();
+            assert_eq!(requests.len(), if fallback { 2 } else { 1 });
+            let request_ids: std::collections::HashSet<_> = requests
+                .iter()
+                .map(|line| {
+                    line.split_whitespace()
+                        .find(|field| field.starts_with("request_id="))
+                        .unwrap()
+                })
+                .collect();
+            assert_eq!(request_ids.len(), requests.len());
+            if !cancel {
+                for request_id in request_ids {
+                    let records = crate::testing::logging::matching(request_id);
+                    assert!(records
+                        .iter()
+                        .any(|line| line.contains("[llm] stream done")));
+                    assert!(!records
+                        .iter()
+                        .any(|line| line.contains("原始语音") || line.contains("Hello 🌍")));
+                }
+            }
         }
     }
 
@@ -3160,6 +3314,95 @@ mod tests {
             Err(error) => assert_eq!(error.message, "LLM model is not configured"),
             Ok(_) => panic!("LM Studio must not generate without a selected model"),
         }
+    }
+
+    #[tokio::test]
+    async fn asr_channel_configured_matches_provider_credential_requirements() {
+        for (provider, accounts) in [
+            ("whisper", vec![ASR_API_KEY_ACCOUNT]),
+            ("bailian", vec![ASR_API_KEY_ACCOUNT]),
+            (
+                "volcengine",
+                vec![VOLCENGINE_APP_KEY_ACCOUNT, VOLCENGINE_ACCESS_KEY_ACCOUNT],
+            ),
+            ("iflytek", vec![XFYUN_APP_ID_ACCOUNT, XFYUN_API_KEY_ACCOUNT]),
+            (
+                "tencent-cloud",
+                vec![
+                    TENCENT_CLOUD_APP_ID_ACCOUNT,
+                    TENCENT_CLOUD_SECRET_ID_ACCOUNT,
+                    TENCENT_CLOUD_SECRET_KEY_ACCOUNT,
+                ],
+            ),
+        ] {
+            let store = InMemoryCredentialStore::default();
+            let invocation = ProviderInvocation::new("cloud-channel", provider);
+            assert!(
+                !asr_channel_configured(&store, &invocation).await.unwrap(),
+                "{provider}"
+            );
+            for account in accounts {
+                assert!(!asr_channel_configured(&store, &invocation).await.unwrap());
+                write_channel_secret(
+                    &store,
+                    CredentialNamespace::Asr,
+                    "cloud-channel",
+                    account,
+                    "fixture-key",
+                )
+                .await;
+            }
+            assert!(
+                asr_channel_configured(&store, &invocation).await.unwrap(),
+                "{provider}"
+            );
+            let context = Arc::new(DictationContext {
+                asr: invocation,
+                ..Default::default()
+            });
+            assert!(
+                prepare_cloud_transcription(&store, context).await.is_ok(),
+                "{provider}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn asr_configuration_does_not_hide_credential_read_errors() {
+        let invocation = ProviderInvocation::new("channel", "whisper");
+        let error = asr_channel_configured(&crate::UnsupportedCredentialStore, &invocation)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, BackendErrorCode::Unsupported);
+    }
+
+    #[tokio::test]
+    async fn llm_channel_configured_matches_polisher_requirements() {
+        let store = InMemoryCredentialStore::default();
+        // Keyed provider with defaults: unconfigured until an API key is saved (issue #1032).
+        assert!(!llm_channel_configured(&store, "ark", "ark", None).await);
+        write_channel_secret(
+            &store,
+            CredentialNamespace::Llm,
+            "ark",
+            LLM_API_KEY_ACCOUNT,
+            "fixture-key",
+        )
+        .await;
+        assert!(llm_channel_configured(&store, "ark", "ark", None).await);
+
+        // Keyless local provider: configured once a model is selected, matching the builder.
+        assert!(
+            !llm_channel_configured(&store, "lmstudio-channel", "lmstudio", None).await,
+            "LM Studio without a model is unconfigured"
+        );
+        assert!(
+            llm_channel_configured(&store, "lmstudio-channel", "lmstudio", Some("local-model"))
+                .await
+        );
+
+        // Empty identifiers are never configured.
+        assert!(!llm_channel_configured(&store, "", "ark", None).await);
     }
 
     #[tokio::test]

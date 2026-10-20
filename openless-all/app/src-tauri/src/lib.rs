@@ -197,8 +197,29 @@ pub(crate) fn set_backend_preferences_for_test(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    asr::local::run_mlx_worker_if_requested();
+    // Explicit acceptance in a debug bundle bypasses UI, microphone and the
+    // system credential vault, but exercises the actual shared/native engines.
+    // This entry point does not exist in production release builds.
+    #[cfg(all(debug_assertions, target_os = "macos", target_arch = "aarch64"))]
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--openless-local-asr-check")) {
+        let args: Vec<_> = std::env::args_os().skip(2).collect();
+        if !(args.len() == 2 || (args.len() == 3 && args[2] == "--download")) {
+            eprintln!("usage: openless --openless-local-asr-check <isolated openless-asr-acceptance* directory> <16kHz mono WAV> [--download]");
+            std::process::exit(2);
+        }
+        let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("acceptance runtime");
+        match runtime.block_on(crate::asr::local::experimental::acceptance::run(
+            args[0].clone().into(), args[1].clone().into(), args.len() == 3,
+        )) {
+            Ok(()) => return,
+            Err(error) => { eprintln!("local ASR acceptance failed: {error:#}"); std::process::exit(1); }
+        }
+    }
+    // Old installations/launchers must not revive the retired native worker.
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--openless-mlx-worker")) {
+        eprintln!("Legacy local ASR worker has been retired");
+        return;
+    }
 
     #[cfg(mobile)]
     {
@@ -420,6 +441,10 @@ macro_rules! app_invoke_handler_desktop {
             commands::list_provider_descriptors,
             commands::validate_provider_credentials,
             commands::list_provider_models,
+            commands::experimental_asr_status,
+            commands::experimental_asr_set_enabled,
+            commands::experimental_asr_delete,
+            commands::experimental_asr_acknowledge,
             commands::local_asr_get_settings,
             commands::local_asr_storage_settings,
             commands::local_asr_set_models_base_dir,
@@ -448,6 +473,7 @@ macro_rules! app_invoke_handler_desktop {
             commands::foundry_local_asr_set_language_hint,
             commands::foundry_local_asr_set_runtime_source,
             commands::foundry_local_asr_set_keep_loaded_secs,
+            commands::foundry_local_asr_download,
             commands::foundry_local_asr_prepare,
             commands::foundry_local_asr_cancel_prepare,
             commands::foundry_local_asr_release,
@@ -497,7 +523,8 @@ macro_rules! app_invoke_handler_desktop {
     };
 }
 
-/// Android/iOS: only commands usable without desktop hotkeys, tray, updater, or local ASR.
+/// Android/iOS: only commands usable without desktop hotkeys, tray or updater;
+/// local ASR commands only where sherpa-onnx is linked (arm64 Android).
 #[macro_export]
 macro_rules! app_invoke_handler_mobile {
     () => {
@@ -514,6 +541,7 @@ macro_rules! app_invoke_handler_mobile {
             $crate::commands::get_android_overlay_status,
             $crate::commands::request_android_overlay_permission,
             $crate::commands::show_android_overlay,
+            $crate::commands::open_android_local_migration,
             $crate::commands::hide_android_overlay,
             $crate::commands::get_android_accessibility_status,
             $crate::commands::request_android_accessibility_permission,
@@ -655,8 +683,103 @@ macro_rules! app_invoke_handler_mobile {
             $crate::restart_app,
             $crate::reset_accessibility_permission_and_restart_app,
             $crate::log_client_error,
+            // Local ASR: arm64 Android links sherpa-onnx (build.rs `local_asr_sherpa`).
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_get_settings,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_storage_settings,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_set_models_base_dir,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_activate,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_set_active_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_set_mirror,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_list_models,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_fetch_remote_info,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_fetch_hf_card,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_download_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_cancel_download,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_delete_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_cleanup_incomplete,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_model_dir,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_reveal_model_dir,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_reveal_models_root,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_test_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_test_channel,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_engine_status,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_release_engine,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_preload,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::local_asr_set_keep_loaded_secs,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_status,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_catalog,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_fetch_remote_info,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_download_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_cancel_download,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_set_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_set_language_hint,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_prepare,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_cancel_prepare,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_release,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_model_dir,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_delete_model,
+            #[cfg(local_asr_sherpa)]
+            $crate::commands::sherpa_onnx_asr_reveal_model_dir,
         ]
     };
+}
+
+#[cfg(not(mobile))]
+fn single_instance_callback<R: Runtime>(app: &AppHandle<R>, argv: Vec<String>, _cwd: String) {
+    if let Some(intent) = cli::parse_cli_intent(&argv) {
+        log::info!(
+            "[single-instance] another instance launched with intent={intent:?}, dispatching"
+        );
+        dispatch_cli_intent(app, intent);
+        return;
+    }
+    if let Some(coordinator) = app
+        .try_state::<Arc<coordinator::Coordinator>>()
+        .map(|state| Arc::clone(&*state))
+    {
+        if coordinator.startup_error().is_none()
+            && coordinator.backend().get_preferences().start_minimized
+        {
+            log::info!("[single-instance] start_minimized=true → skipping show on relaunch");
+            return;
+        }
+    }
+    log::info!("[single-instance] another instance launched, focusing existing main window");
+    show_main_window(app);
 }
 
 #[cfg(not(mobile))]
@@ -682,44 +805,9 @@ fn run_desktop() {
     // this plugin registers; the plugin is macOS-only.
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
+    // Keep one instance across installed and development copies sharing the same app identifier.
+    let builder = builder.plugin(tauri_plugin_single_instance::init(single_instance_callback));
     builder
-        // Single-instance lock: the second process exits immediately and forwards the
-        // activation signal to the running instance's main window. Otherwise two OpenLess
-        // copies (e.g. /Applications/ + dev build) each grab the global hotkey, so one key
-        // press runs the pipeline in both processes and text gets inserted twice. See issue #50.
-        //
-        // 第二个进程的 argv 还会转发 CLI 意图给主实例 coordinator；
-        // Linux 桌面快捷键由 egui Host 处理。详见 issue #420 / `cli.rs`。
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            if let Some(intent) = cli::parse_cli_intent(&argv) {
-                log::info!(
-                    "[single-instance] another instance launched with intent={intent:?}, dispatching"
-                );
-                dispatch_cli_intent(app, intent);
-                return;
-            }
-            // Silent-start mode: a second launch (Win11 "reopen apps after sign-in",
-            // autostart double-trigger, or the user clicking the icon again) must not pop
-            // the main window either, otherwise start_minimized=true is defeated entirely
-            // on Win11. Users open the main window via the tray menu / tray left-click.
-            // issue #468.
-            if let Some(coordinator) = app
-                .try_state::<Arc<coordinator::Coordinator>>()
-                .map(|s| Arc::clone(&*s))
-            {
-                if coordinator.startup_error().is_none()
-                    && coordinator.backend().get_preferences().start_minimized {
-                    log::info!(
-                        "[single-instance] start_minimized=true → skipping show on relaunch"
-                    );
-                    return;
-                }
-            }
-            log::info!(
-                "[single-instance] another instance launched, focusing existing main window"
-            );
-            show_main_window(app);
-        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -951,6 +1039,20 @@ fn run_desktop() {
                     if let tauri::WindowEvent::CloseRequested { ref api, .. } = event {
                         api.prevent_close();
                         hide_main_window(app);
+                    }
+                }
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                if label == "less-computer" {
+                    if let tauri::WindowEvent::CloseRequested { ref api, .. } = event {
+                        // Native traffic lights own the macOS window. Preserve
+                        // the existing animated dismiss and capture cleanup.
+                        api.prevent_close();
+                        let coordinator = Arc::clone(app.state::<Arc<coordinator::Coordinator>>().inner());
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(error) = coordinator.dismiss_less_computer().await {
+                                log::warn!("[less-computer] native close cleanup failed: {error}");
+                            }
+                        });
                     }
                 }
             }
@@ -2866,7 +2968,10 @@ fn ensure_less_computer_window<R: tauri::Runtime>(
     )
     .title("OpenLess Less Computer")
     .inner_size(LESS_COMPUTER_WINDOW_WIDTH, LESS_COMPUTER_WINDOW_HEIGHT)
-    .decorations(false)
+    .decorations(true)
+    .title_bar_style(tauri::TitleBarStyle::Overlay)
+    .hidden_title(true)
+    .traffic_light_position(tauri::LogicalPosition::new(16.0, 18.0))
     .transparent(true)
     .shadow(true)
     .always_on_top(true)
@@ -3215,9 +3320,21 @@ fn position_less_computer_window<R: tauri::Runtime>(
 pub(crate) fn show_less_computer_window<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<(), String> {
+    app.try_state::<Arc<openless_core::OpenLessBackend>>()
+        .ok_or_else(|| "Backend is not initialized".to_string())?
+        .ensure_testing_features_enabled()
+        .map_err(|error| error.message)?;
     let window = ensure_less_computer_window(app)?;
     let window_clone = window.clone();
+    let app_for_show = app.clone();
     app.run_on_main_thread(move || {
+        if app_for_show
+            .try_state::<Arc<openless_core::OpenLessBackend>>()
+            .is_none_or(|backend| backend.ensure_testing_features_enabled().is_err())
+        {
+            return;
+        }
+
         use objc2::msg_send;
         use objc2::runtime::AnyObject;
         // This helper is also called from the Tokio worker that executes a text or
@@ -3253,14 +3370,11 @@ pub(crate) fn show_less_computer_window<R: tauri::Runtime>(
                 let _ = window_clone.show();
             }
         }
+        // Serialize the entrance event with preference-driven hides.
+        LESS_COMPUTER_PANEL_EPOCH.fetch_add(1, Ordering::SeqCst);
+        let _ = app_for_show.emit_to("less-computer", "chat-panel:shown", serde_json::json!({}));
     })
-    .map_err(|error| {
-        log::warn!("[less-computer] show dispatch failed: {error}");
-        format!("Less Computer window show dispatch failed: {error}")
-    })?;
-    // Cancel the pending exit-hide (fast close-open) and replay the entrance animation.
-    LESS_COMPUTER_PANEL_EPOCH.fetch_add(1, Ordering::SeqCst);
-    let _ = app.emit_to("less-computer", "chat-panel:shown", serde_json::json!({}));
+    .map_err(|error| format!("Less Computer window show dispatch failed: {error}"))?;
     Ok(())
 }
 
@@ -3268,14 +3382,35 @@ pub(crate) fn show_less_computer_window<R: tauri::Runtime>(
 pub(crate) fn show_less_computer_window<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<(), String> {
+    app.try_state::<Arc<openless_core::OpenLessBackend>>()
+        .ok_or_else(|| "Backend is not initialized".to_string())?
+        .ensure_testing_features_enabled()
+        .map_err(|error| error.message)?;
+    // Creation stays off the synchronous WebView IPC thread. Visibility and
+    // the opt-in recheck run together on the UI thread; acknowledge their result
+    // so the caller does not mistake a queued action for a successful opening.
     let window = ensure_less_computer_window(app)?;
-    window.show().map_err(|error| {
-        log::warn!("[less-computer] show failed: {error}");
-        format!("Less Computer window show failed: {error}")
-    })?;
-    LESS_COMPUTER_PANEL_EPOCH.fetch_add(1, Ordering::SeqCst);
-    let _ = app.emit_to("less-computer", "chat-panel:shown", serde_json::json!({}));
-    Ok(())
+    let app_for_show = app.clone();
+    let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
+    app.run_on_main_thread(move || {
+        let result = app_for_show
+            .try_state::<Arc<openless_core::OpenLessBackend>>()
+            .ok_or_else(|| "Backend is not initialized".to_string())
+            .and_then(|backend| backend.ensure_testing_features_enabled().map_err(|error| error.message))
+            .and_then(|()| {
+                window.show().map_err(|error| {
+                    log::warn!("[less-computer] show failed: {error}");
+                    format!("Less Computer window show failed: {error}")
+                })
+            });
+        if result.is_ok() {
+            LESS_COMPUTER_PANEL_EPOCH.fetch_add(1, Ordering::SeqCst);
+            let _ = app_for_show.emit_to("less-computer", "chat-panel:shown", serde_json::json!({}));
+        }
+        let _ = result_tx.send(result);
+    })
+    .map_err(|error| format!("Less Computer window show dispatch failed: {error}"))?;
+    result_rx.recv().map_err(|error| format!("Less Computer window show task failed: {error}"))?
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -3354,66 +3489,9 @@ fn show_qa_window_no_activate<R: tauri::Runtime>(window: &tauri::WebviewWindow<R
     true
 }
 
-/// Physical rect (virtual desktop coordinates) of the input target monitor + DPI scale.
-#[cfg(target_os = "windows")]
-pub(crate) struct ForegroundMonitor {
-    pub(crate) left: i32,
-    pub(crate) top: i32,
-    pub(crate) right: i32,
-    pub(crate) bottom: i32,
-    /// Work-area rect (physical px, taskbar excluded). Consistent across platforms: the
-    /// capsule clamps into the work area first, avoiding the taskbar. Falls back to the
-    /// full-screen rect when unavailable. issue #470.
-    pub(crate) work_left: i32,
-    pub(crate) work_top: i32,
-    pub(crate) work_right: i32,
-    pub(crate) work_bottom: i32,
-    /// The monitor's effective DPI scale (1.0 = 96dpi).
-    pub(crate) scale: f64,
-}
-
-/// Locates, via Win32, the monitor of "the current foreground window (= the app the user
-/// is typing in)". With multiple monitors, places the capsule on "the screen being typed
-/// on". `window.current_monitor()` returns the monitor the capsule window itself is on, so
-/// it cannot be used to follow the input position.
-#[cfg(target_os = "windows")]
-pub(crate) fn foreground_window_monitor() -> Option<ForegroundMonitor> {
-    use windows::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-    };
-    use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
-    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
-
-    unsafe {
-        let hwnd = GetForegroundWindow();
-        let hmon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-        if hmon.is_invalid() {
-            return None;
-        }
-        let mut mi = MONITORINFO {
-            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
-            ..Default::default()
-        };
-        if !GetMonitorInfoW(hmon, &mut mi).as_bool() {
-            return None;
-        }
-        let mut dpi_x: u32 = 96;
-        let mut dpi_y: u32 = 96;
-        // Fall back to 96dpi when unreadable; positioning must not fail as a whole.
-        let _ = GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
-        Some(ForegroundMonitor {
-            left: mi.rcMonitor.left,
-            top: mi.rcMonitor.top,
-            right: mi.rcMonitor.right,
-            bottom: mi.rcMonitor.bottom,
-            work_left: mi.rcWork.left,
-            work_top: mi.rcWork.top,
-            work_right: mi.rcWork.right,
-            work_bottom: mi.rcWork.bottom,
-            scale: (dpi_x as f64 / 96.0).max(0.1),
-        })
-    }
-}
+/// Pure multi-monitor capsule helpers (tests run on every CI host). Window creation
+/// inside the module stays `cfg(windows)`.
+mod capsule_mirrors;
 
 /// Init and card-return paths use the default stage; the recording display path passes the
 /// current style explicitly.
@@ -3439,6 +3517,38 @@ pub(crate) fn position_capsule_bottom_center_with_style<R: tauri::Runtime>(
     )
 }
 
+#[cfg(target_os = "windows")]
+pub(crate) fn position_capsule_on_monitor<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    translation_active: bool,
+    style: types::CapsuleStyle,
+    monitor: capsule_mirrors::MonitorRect,
+) -> tauri::Result<()> {
+    let bounds = capsule_window_bounds_for_style_with_transcript_and_translation(
+        style,
+        false,
+        translation_active,
+    );
+    let bottom_gap = capsule_bottom_gap(style);
+    let (phys_w, phys_h, x, y) =
+        capsule_mirrors::capsule_placement(bounds.width, bounds.height, bottom_gap, monitor);
+    window.set_size(PhysicalSize::new(phys_w, phys_h))?;
+    log::debug!(
+        "[capsule] win position: target mon=({},{})..({},{}) scale={:.2} size=({}x{}) -> ({},{})",
+        monitor.left,
+        monitor.top,
+        monitor.right,
+        monitor.bottom,
+        monitor.scale,
+        phys_w,
+        phys_h,
+        x,
+        y
+    );
+    window.set_position(PhysicalPosition::new(x, y))?;
+    Ok(())
+}
+
 pub(crate) fn position_capsule_bottom_center_with_style_and_transcript<R: tauri::Runtime>(
     window: &tauri::WebviewWindow<R>,
     translation_active: bool,
@@ -3458,47 +3568,15 @@ pub(crate) fn position_capsule_bottom_center_with_style_and_transcript<R: tauri:
         native_transcript_visible,
         translation_active,
     );
-    const EDGE_GAP: f64 = 12.0;
-    // Typeless hugs the work-area bottom edge (the work area already excludes Dock / taskbar).
-    let bottom_gap = match style {
-        types::CapsuleStyle::Typeless => 0.0,
-        _ => EDGE_GAP,
-    };
+    let bottom_gap = capsule_bottom_gap(style);
 
-    // Windows: follow the monitor of "the app being typed in", so the capsule doesn't
-    // always land on the primary screen / the capsule's own screen on multi-monitor setups.
+    // Windows: keep one capsule on the display under the cursor, just like macOS.
+    // Do not use the capsule's old window position to select the display.
     #[cfg(target_os = "windows")]
     {
-        if let Some(mon) = foreground_window_monitor() {
-            let scale = mon.scale;
-            let phys_w = (bounds.width * scale).round() as i32;
-            let phys_h = (bounds.height * scale).round() as i32;
-            window.set_size(PhysicalSize::new(
-                phys_w.max(1) as u32,
-                phys_h.max(1) as u32,
-            ))?;
-
-            let (work_l, work_t, work_r, work_b) =
-                if mon.work_right > mon.work_left && mon.work_bottom > mon.work_top {
-                    (mon.work_left, mon.work_top, mon.work_right, mon.work_bottom)
-                } else {
-                    (mon.left, mon.top, mon.right, mon.bottom)
-                };
-            let x = work_l + ((work_r - work_l - phys_w) / 2).max(0);
-            let y = work_b - phys_h - (bottom_gap * scale).round() as i32;
-            let (clamped_x, clamped_y) =
-                clamp_to_monitor(x, y, phys_w, phys_h, work_l, work_t, work_r, work_b);
-            log::debug!(
-                "[capsule] win position: mon=({},{})..({},{}) work=({},{})..({},{}) scale={:.2} size=({}x{}) -> raw=({},{}) clamped=({},{})",
-                mon.left, mon.top, mon.right, mon.bottom,
-                work_l, work_t, work_r, work_b,
-                scale, phys_w, phys_h, x, y, clamped_x, clamped_y
-            );
-            window.set_position(PhysicalPosition::new(clamped_x, clamped_y))?;
-            return Ok(());
+        if let Some(mon) = capsule_mirrors::target_monitor_rect(window) {
+            return position_capsule_on_monitor(window, translation_active, style, mon);
         }
-        // Only fall back to the current_monitor logic below when Win32 can't find the
-        // foreground monitor.
     }
 
     // macOS: follow the monitor under the mouse cursor, not the monitor the capsule window
@@ -3557,6 +3635,16 @@ fn capsule_window_bounds(translation_active: bool) -> CapsuleWindowBounds {
     // in src/lib/capsuleLayout.ts.
     let _ = translation_active;
     capsule_window_bounds_for_style(types::CapsuleStyle::Siri)
+}
+
+/// Logical gap between the capsule and the work-area bottom edge (the work area already
+/// excludes the Dock / taskbar). Typeless hugs the edge.
+fn capsule_bottom_gap(style: types::CapsuleStyle) -> f64 {
+    const EDGE_GAP: f64 = 12.0;
+    match style {
+        types::CapsuleStyle::Typeless => 0.0,
+        _ => EDGE_GAP,
+    }
 }
 
 fn capsule_window_bounds_for_style(style: types::CapsuleStyle) -> CapsuleWindowBounds {

@@ -92,9 +92,9 @@ async fn receive(socket: &mut ServerSocket) -> Value {
 /// Google emits binary JSON, while some gateways emit text JSON.
 async fn send(socket: &mut ServerSocket, value: Value, binary: bool) {
     let message = if binary {
-        Message::Binary(serde_json::to_vec(&value).unwrap())
+        Message::binary(serde_json::to_vec(&value).unwrap())
     } else {
-        Message::Text(value.to_string())
+        Message::text(value.to_string())
     };
     socket.send(message).await.unwrap();
 }

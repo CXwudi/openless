@@ -123,10 +123,8 @@ pub(super) async fn connect(config: &super::GeminiLiveConfig) -> Result<Socket> 
         .upgrade()
         .await
         .map_err(|_| anyhow::anyhow!("Gemini Live upgrade failed"))?;
-    let config = WebSocketConfig {
-        max_message_size: Some(4 * 1024 * 1024),
-        max_frame_size: Some(4 * 1024 * 1024),
-        ..WebSocketConfig::default()
-    };
+    let config = WebSocketConfig::default()
+        .max_message_size(Some(4 * 1024 * 1024))
+        .max_frame_size(Some(4 * 1024 * 1024));
     Ok(WebSocketStream::from_raw_socket(stream, Role::Client, Some(config)).await)
 }

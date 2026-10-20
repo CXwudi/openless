@@ -3,7 +3,12 @@
 import type { zhCN } from './zh-CN';
 
 // Type-level guarantee that en mirrors the zh-CN shape.
+import { uiRefinementEn as uiRefinement } from './uiRefinement';
+import { experimentalAsrEn as experimentalAsr } from './experimentalAsr';
+
 export const en: typeof zhCN = {
+  experimentalAsr,
+  uiRefinement,
   voiceEdit: {
     title: 'Voice editing session',
     description:
@@ -1243,6 +1248,13 @@ export const en: typeof zhCN = {
     cancelledTitle: 'Recording cancelled',
   },
   settings: {
+    testingFeatures: {
+      title: 'Features under testing',
+      enable: 'Enable features under testing',
+      description:
+        'Show Less Computer and the Claude console for setup and use on supported platforms. Turning this off stops active tasks and hides their entries while keeping your settings. Applies only to this device.',
+      unavailable: 'No testing features are available on this platform yet.',
+    },
     selectionWorkspace: {
       title: 'Selection Assistant',
       hint: 'With a selection, one shortcut polishes (voice edit off) or takes a spoken instruction to ask or edit. With no selection but focus in a text field, speak to Help me write a draft or ask a question.',
@@ -1321,6 +1333,16 @@ export const en: typeof zhCN = {
       cursorContextLabel: 'Cursor context (experimental)',
       cursorContextDesc:
         'Send a short stretch of text around the cursor with polish requests as reference for names, homophones and pronouns (macOS / Windows / Android). Dictation, quick notes and cloud notes all use it, but the context itself is never written to notes, history or logs; with a cloud model it is sent to that provider with the polish request. This switch is separate from local vocabulary learning. Password fields, terminals and known sensitive apps are excluded.',
+    },
+    localMigration: {
+      title: 'Local configuration migration',
+      description:
+        'Export all portable local configuration to a versioned bundle, or restore it on another Android device. Share mode is redacted by default; personal migration can carry credentials only with password protection. The native flow previews the source, version, categories, and changes before Merge or Replace.',
+      safetyNote:
+        'System permissions, OAuth sessions, device paths, and runtime state never migrate. A local backup is created before import.',
+      open: 'Open local migration',
+      opening: 'Opening…',
+      openFailed: 'Could not open the local migration flow. Try again from Settings.',
     },
     codingConsole: {
       title: 'Claude Console',
@@ -1480,6 +1502,16 @@ export const en: typeof zhCN = {
       capsuleTranscriptDesc:
         'Show recognized speech in the capsule instead of audio bars. Turn off to restore the original display. Non-streaming recognition appears when results arrive.',
       capsuleTranscriptFontSize: 'Transcript font size',
+      capsuleDisplayModeLabel: 'Multi-display capsule',
+      capsuleDisplayModeDesc:
+        'Choose where the recording capsule appears. Showing it on all displays uses additional windows and graphics resources.',
+      capsuleDisplayCursorScreen: 'Display under the pointer',
+      capsuleDisplayPrimaryScreen: 'Primary display only',
+      capsuleDisplayForegroundWindowScreen: 'Display under the foreground window',
+      capsuleDisplayAllScreens: 'Show on all displays',
+      capsuleDisplayModeRestartTitle: 'Restart OpenLess to apply display mode',
+      capsuleDisplayModeRestartDesc:
+        'Switching from all-screen display requires a restart to clear the previous capsule windows. Restart now?',
       capsuleStyleLabel: 'Capsule style',
       capsuleStyleSiri: 'Shimmer Siri style',
       capsuleStyleClassic: 'OpenLess default style',
@@ -1489,6 +1521,9 @@ export const en: typeof zhCN = {
       lowLatencyDictationLabel: 'Low-latency capture',
       lowLatencyDictationDesc:
         'Keep a microphone stream ready and retain up to 500 ms in memory so speech immediately after the hotkey is less likely to be missed. Audio is not saved or uploaded until you confirm recording; this uses more power and keeps the microphone indicator active.',
+      audioEnhancementLabel: 'Lightweight microphone enhancement',
+      audioEnhancementDesc:
+        'Applies light gain, soft limiting, and conservative noise suppression to the local microphone. It does not include echo cancellation. Off by default.',
       muteDuringRecordingLabel: 'Mute while recording',
       muteDuringRecordingDesc:
         'Temporarily mute system output during voice input to avoid speaker echo.',
@@ -1506,6 +1541,9 @@ export const en: typeof zhCN = {
       pasteShortcutCtrlV: 'Ctrl+V (default / most apps)',
       pasteShortcutCtrlShiftV: 'Ctrl+Shift+V (kitty / alacritty / wezterm / most terminals)',
       pasteShortcutShiftInsert: 'Shift+Insert (xterm / urxvt)',
+      plainTextInsertionLabel: 'Plain-text insertion mode',
+      plainTextInsertionDesc:
+        'When on, the simulated paste uses Shift+Insert instead of Ctrl+V (the shortcut above is locked while on). Only enable this in very special cases, e.g. when a keyboard layout switcher such as Punto Switcher swallows Ctrl+V. Applies to clipboard paste insertion only (Windows).',
       comboRecordLabel: 'Record shortcut',
       comboRecordDesc:
         'Click, then press your desired key combination (e.g. \u2318\u21E7D). Supports Toggle and Push-to-talk modes.',
@@ -1554,6 +1592,9 @@ export const en: typeof zhCN = {
         'Entries older than this are pruned on new writes; 0 = no time-based pruning.',
       historyMaxEntriesLabel: 'Max history entries',
       historyMaxEntriesDesc: 'Max sessions retained locally. Blank = 200. Range 5–200.',
+      polishSkipMaxCharsLabel: 'Skip polish for short dictations (max characters)',
+      polishSkipMaxCharsDesc:
+        'Transcripts with at most N characters (spaces not counted) are inserted as raw text without calling the LLM. 0 = off. Translation always polishes.',
       polishContextWindowLabel: 'Polish context window (minutes)',
       polishContextWindowDesc:
         'Use the last N minutes of polished transcripts as multi-turn context; 0 = disabled.',
@@ -1716,6 +1757,9 @@ export const en: typeof zhCN = {
         asrSherpaOnnxLocal: 'Local sherpa-onnx (Experimental)',
         asrFoundryLocalWhisper: 'Local Whisper (Foundry Local)',
         asrLocalWhisper: 'Local Whisper (batch)',
+        asrExperimentalSenseVoice: experimentalAsr.senseVoiceLabel,
+        asrExperimentalGemma: experimentalAsr.gemmaLabel,
+        asrExperimentalTextStream: experimentalAsr.textStreamLabel,
         asrLocalQwen3: 'Local Qwen3-ASR',
         asrLocalQwen3Mlx: 'Local Qwen3-ASR (MLX / Metal)',
         asrLocalQwen3C: 'Local Qwen3-ASR (C / CPU)',
@@ -2077,11 +2121,13 @@ export const en: typeof zhCN = {
         background: 'When app is backgrounded',
         keyboard: 'When keyboard appears',
         always: 'Always visible',
+        never: 'Never show',
       },
       androidOverlayTriggerHint: {
         background: 'Simple and battery-friendly; no overlay while typing in other apps.',
         keyboard: 'This mode is shelved. Existing settings are moved back to background.',
         always: 'Always available, but permanently on screen.',
+        never: 'Never appears automatically; the keyboard remains available.',
       },
       androidOverlayTriggerDisabled: {
         keyboard:
@@ -2161,6 +2207,9 @@ export const en: typeof zhCN = {
         'SendInput Unicode types directly, bypassing TSF / IME — no input-method switching needed.',
       streamingInsertHintLinux:
         'Uses fcitx5 plugin for text submission; streaming insertion uses enigo + XTest for keystroke synthesis.',
+      windowsCompositionInputLabel: 'Show live transcript in the input box (Windows)',
+      windowsCompositionInputDesc:
+        'While you speak, the recognized text appears underlined in the input box and is replaced by the final result when you finish. Requires the OpenLess TSF input component and a target app that supports the Text Services Framework (TSF).',
       streamingInsertSaveClipboardLabel: 'Copy to clipboard',
       streamingInsertSaveClipboardHint:
         'After a successful insert, write the final text to the clipboard so Cmd+V can paste it again. Off = clipboard is never touched.',
@@ -2168,6 +2217,9 @@ export const en: typeof zhCN = {
       localAsrDesc:
         'Move transcription from cloud ASR to on-device inference. Offline / privacy-sensitive use only.',
       localAsrWarningShort: 'Local inference is slower; under-spec hardware may drop words.',
+      localAsrFallbackLabel: 'Use the local model when cloud ASR fails',
+      localAsrFallbackDesc:
+        'On a weak or missing connection, transcribe the recording with the downloaded local model instead of waiting for cloud retries. Requires a downloaded local model.',
       qwen3Desc: 'Once enabled, the ASR provider will be taken over.',
       sherpaDesc: 'Once enabled, the ASR provider will be taken over.',
       foundryDesc: 'Once enabled, the ASR provider will be taken over.',
@@ -2365,7 +2417,11 @@ export const en: typeof zhCN = {
     noResults: 'No matching categories. Try “microphone”, “models” or “theme”.',
     autoSaveHint: 'Changes save automatically',
     backToAdvanced: 'Back to Experiments & extensions',
+    backToTestingFeatures: 'Back to features under testing',
     advancedPages: {
+      customSyncServer: 'For self-hosted services only; official sync needs no configuration.',
+      localModels: experimentalAsr.description,
+      testingFeatures: 'Opt in to features that are still being tested.',
       vocabularyLearning:
         'Learn from manual corrections after dictation; configure observation, confirmation time and phrase length.',
       lessComputer: 'Choose an agent and configure its model, permissions, and working directory.',
@@ -2376,13 +2432,13 @@ export const en: typeof zhCN = {
     descriptions: {
       general: 'Choose a microphone, adjust recording and text input, or connect your phone.',
       inputMethod: 'Configure the Android overlay and input method for phone typing.',
-      shortcuts: 'Set up shortcuts and choose what happens when you select text.',
+      shortcuts: 'Search, browse and customize keyboard shortcuts.',
       services:
         'Choose speech recognition and text processing services. Manage channels, local models and connections.',
       appearance: 'Adjust the theme, page layout and interface language for comfortable reading.',
       privacy:
         'Check system permissions and connections. Manage history, recordings and local data.',
-      advanced: 'Configure Less Computer and debugging as needed.',
+      advanced: 'Configure testing features, vocabulary learning, and debugging tools.',
       about: 'View your version, update channel and automatic update settings.',
     },
     searchKeywords: {
@@ -2399,7 +2455,7 @@ export const en: typeof zhCN = {
 
     sections: {
       appearance: 'Appearance & language',
-      shortcuts: 'Shortcuts & selection',
+      shortcuts: 'Shortcuts',
       general: 'Recording & input',
       inputMethod: 'Input method',
       services: 'AI services & models',
@@ -2530,7 +2586,10 @@ export const en: typeof zhCN = {
     foundryError: 'Foundry status',
     foundrySetDefault: 'Set default / Enable Windows local ASR',
     foundryEnabling: 'Enabling…',
-    foundryPrepare: 'Prepare / Download / Load',
+    foundryPrepare: 'Download / verify model',
+    runtimeDownloadRestart:
+      'The download used native runtime components. Restart OpenLess before enabling the model; it will not be enabled automatically. Restart now?',
+    restartNow: 'Restart now',
     foundryPreparing: 'Preparing…',
     foundryReleasing: 'Releasing…',
     foundryRetryPrepare: 'Continue / Retry prepare',

@@ -352,6 +352,8 @@ export interface UserPreferences {
   showCapsule: boolean;
   /** Recording capsule appearance; synced to the capsule window on save. */
   capsuleStyle: CapsuleStyle;
+  capsuleDisplayMode: 'cursorScreen' | 'primaryScreen' | 'foregroundWindowScreen' | 'allScreens';
+  capsuleDisplayModeV2?: UserPreferences['capsuleDisplayMode'];
   capsuleTranscriptEnabled: boolean;
   capsuleTranscriptFontSize: number;
   /** Temporarily mutes system output during recording; restores the original mute state on stop/cancel/error. */
@@ -360,6 +362,8 @@ export interface UserPreferences {
   stableTranscriptionEnabled: boolean;
   /** Keep a bounded microphone pre-roll in memory to reduce the delay before first speech is captured. */
   lowLatencyDictationEnabled: boolean;
+  /** Apply conservative noise suppression, lightweight gain, and soft limiting to local microphone input. Disabled by default. */
+  audioEnhancementEnabled: boolean;
   /** When the recording hotkey enters the recording state, plays a synthesized cue that recording has started.
    *  On by default; synthesized with the Web Audio API in the capsule window, independent of showCapsule. */
   audioCueOnRecord: boolean;
@@ -443,6 +447,8 @@ export interface UserPreferences {
   openAppHotkey: ShortcutBinding | null;
   /** Style pack direct hotkeys: pressing one activates the corresponding style pack. Default empty list (issue #759). */
   stylePackHotkeys: StylePackHotkey[];
+  /** Local opt-in for features under testing. Defaults to false. */
+  testingFeaturesEnabled: boolean;
   /** Less Computer: whether enabled. Off by default. */
   codingAgentEnabled: boolean;
   /** Agent backend: claude-code-cli (default) / opencode-cli / codex-cli / dsh-cli. */
@@ -488,10 +494,14 @@ export interface UserPreferences {
   sherpaOnnxLanguageHint: string;
   /** Seconds the Windows sherpa-onnx model stays loaded in the runtime. */
   sherpaOnnxKeepLoadedSecs: number;
+  /** When a cloud ASR provider fails, transcribe the recording with the selected sherpa-onnx model. */
+  localAsrFallbackEnabled: boolean;
   /** History retention days. 0 = no time-based cleanup (the 200-entry cap still applies). Default 7. */
   historyRetentionDays: number;
   /** Conversation-aware polish context window (minutes). 0 = off. Default 5. See PR-A. */
   polishContextWindowMinutes: number;
+  /** Skip LLM polish when the transcript has at most N non-whitespace chars (issue #1032). 0 = off. */
+  polishSkipMaxChars: number;
   /** Run silently at startup (no main window). Common for Windows auto-start — background + tray only,
    *  without the main window popping up. When on, no startup path shows the window; open it from the menu bar / tray. Default false. */
   startMinimized: boolean;
@@ -512,6 +522,8 @@ export interface UserPreferences {
   /** Whether to write the final polished text back to the clipboard after a successful streaming insert.
    *  When on, Cmd+V can re-paste that output, matching the one-shot path. Default true. */
   streamingInsertSaveClipboard: boolean;
+  /** Windows TSF: show the live transcript as an underlined composition in the target. */
+  windowsCompositionInput: boolean;
   /** Whether to send the text near the cursor in the document the user is writing to LLM polish as context.
    *  Default false — when on, every dictation reads cursor-local text for the configured LLM provider.
    *  Available on macOS, Windows and Android (IME); password fields / Secure Input (macOS) /
@@ -796,7 +808,7 @@ export type PermissionStatus =
   'granted' | 'denied' | 'notDetermined' | 'restricted' | 'notApplicable' | 'noDevice';
 
 /** Runtime platform kind returned by `get_platform_capabilities`. */
-export type PlatformKind = 'desktop' | 'android' | 'mobile';
+export type PlatformKind = 'desktop' | 'android' | 'harmony' | 'mobile';
 
 /** Feature flags for desktop vs Android APK UI gating. Mirrors src-tauri PlatformCapabilities. */
 export interface PlatformCapabilities {

@@ -139,7 +139,7 @@ async fn accept_setup(listener: &TcpListener, mode: &str) -> ServerSocket {
 /// The real service uses binary JSON for setup acknowledgement.
 async fn activate(socket: &mut ServerSocket) {
     socket
-        .send(Message::Binary(
+        .send(Message::binary(
             serde_json::to_vec(&json!({"setupComplete": {}})).unwrap(),
         ))
         .await
@@ -175,7 +175,7 @@ async fn preview(socket: &mut ServerSocket) {
     );
     for text in [DRAFT_ONE, DRAFT_TWO] {
         socket
-            .send(Message::Text(
+            .send(Message::text(
                 json!({"serverContent": {"interimInputTranscription": {"text": text}}}).to_string(),
             ))
             .await
@@ -190,7 +190,7 @@ async fn finalize(socket: &mut ServerSocket, text: &str) {
         json!({"realtimeInput": {"activityEnd": {}}})
     );
     socket
-        .send(Message::Binary(
+        .send(Message::binary(
             serde_json::to_vec(&json!({"serverContent": {
                 "inputTranscription": {"text": text}, "generationComplete": true
             }}))
@@ -402,7 +402,7 @@ async fn backend_finalizes_live_segments(
             // A late hypothesis and changed final must remain valid while stop drains Live.
             if segments.len() > 1 {
                 socket
-                    .send(Message::Text(
+                    .send(Message::text(
                         json!({"serverContent": {
                             "interimInputTranscription": {"text": "Can we meet on Tuesday"}
                         }})
@@ -413,7 +413,7 @@ async fn backend_finalizes_live_segments(
             }
             if completion_first {
                 socket
-                    .send(Message::Text(
+                    .send(Message::text(
                         json!({"serverContent": {
                             "generationComplete": true, "turnComplete": true
                         }})
@@ -424,7 +424,7 @@ async fn backend_finalizes_live_segments(
             }
             for (index, text) in segments.iter().enumerate() {
                 socket
-                    .send(Message::Text(
+                    .send(Message::text(
                         json!({"serverContent": {
                             "inputTranscription": {"text": text},
                             "generationComplete": !completion_first && index + 1 == segments.len()

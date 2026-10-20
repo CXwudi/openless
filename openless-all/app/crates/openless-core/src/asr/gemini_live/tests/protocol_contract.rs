@@ -43,8 +43,8 @@ fn errors_keep_server_code_without_echoing_credentials() {
         "message": format!("rejected key={API_KEY} at https://gateway.invalid/?access_token=secret")
     }});
     for message in [
-        Message::Text(body.to_string()),
-        Message::Binary(serde_json::to_vec(&body).unwrap()),
+        Message::text(body.to_string()),
+        Message::binary(serde_json::to_vec(&body).unwrap()),
     ] {
         let error = protocol::decode(message).unwrap_err().to_string();
         assert!(error.contains("429"));
@@ -52,12 +52,12 @@ fn errors_keep_server_code_without_echoing_credentials() {
         assert!(!error.contains("access_token"));
         assert!(!error.contains("gateway.invalid"));
     }
-    let malformed = protocol::decode(Message::Binary(API_KEY.as_bytes().to_vec()))
+    let malformed = protocol::decode(Message::binary(API_KEY.as_bytes().to_vec()))
         .unwrap_err()
         .to_string();
     assert!(!malformed.contains(API_KEY));
     assert!(protocol::decode(Message::Close(None)).is_err());
-    assert!(protocol::decode(Message::Text(json!({"goAway": {}}).to_string())).is_err());
+    assert!(protocol::decode(Message::text(json!({"goAway": {}}).to_string())).is_err());
 }
 
 #[test]
